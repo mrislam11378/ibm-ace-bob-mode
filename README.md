@@ -241,16 +241,3 @@ This mode is designed to evolve with your organization:
 - **Refine workflows** to match changing processes
 - **Extend coverage** to new integration scenarios
 
-## Acknowledgments
-
-- **IBM ace-bob skill** - Foundation for ACE artifact generation (https://github.com/ot4i/ace-bob)
-- **Enterprise ACE teams** - Real-world patterns and best practices
-- **IBM App Connect Enterprise** - Integration platform
-
-## License
-
-This custom mode builds upon IBM's ace-bob skill and is intended for enterprise use in conjunction with IBM App Connect Enterprise.
-
----
-
-**Note:** This mode demonstrates the power of combining IBM's official skills with enterprise-specific knowledge to create a tailored development experience that ensures quality, consistency, and alignment with organizational standards.
