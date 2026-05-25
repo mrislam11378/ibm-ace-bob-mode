@@ -182,11 +182,22 @@ ACE Developer Mode:
 
 ## Getting Started
 
-1. **Ensure ace-bob skill is available** in your `.bob/skills/` directory
-2. **Switch to ACE Developer mode** when working on ACE projects
-3. **Describe your integration requirement** - Bob will guide you through the process
-4. **Review generated artifacts** - All files follow enterprise standards
-5. **Import into ACE Toolkit** - Use File > Import > Existing Projects into Workspace
+### Prerequisites
+
+1. **Download the ace-bob mode** - Clone or download this repository to your local machine
+2. **Install the ace-bob skill** - The ace-bob skill must be checked out from GitHub:
+   ```bash
+   cd .bob/skills/
+   git clone https://github.com/ot4i/ace-bob.git
+   ```
+   This ensures you have the latest version of IBM's ace-bob skill with all ACE artifact generation capabilities.
+
+### Using the Mode
+
+1. **Switch to ACE Developer mode** when working on ACE projects
+2. **Describe your integration requirement** - Bob will guide you through the process
+3. **Review generated artifacts** - All files follow enterprise standards
+4. **Import into ACE Toolkit** - Use File > Import > Existing Projects into Workspace
 
 ## Example Commands
 
