@@ -168,16 +168,21 @@ ACE Developer Mode:
 ## File Structure
 
 ```
-.bob/rules-ace-developer/
-├── README.md                           # This file
-├── 1_workflow.xml                      # Development workflow guidance
-├── 2_esql_best_practices.xml          # ESQL coding standards
-├── 3_project_structure_patterns.xml   # Project organization
-├── 4_message_flow_patterns.xml        # Flow design patterns
-├── 5_ace_bob_skill_integration.xml    # ace-bob usage guide
-└── 6_enterprise_patterns.xml          # Real-world patterns
-
-.bobmodes                               # Mode configuration
+README.md                                # This file
+.bob/
+├── custom_modes.yaml                    # Custom mode configuration
+├── rules-ace-developer/
+│   ├── 1_development_workflow_and_patterns.xml
+│   │                                     # Development workflow and implementation patterns
+│   ├── 2_esql_and_coding_standards.xml
+│   │                                     # ESQL best practices and coding standards
+│   ├── 3_project_structure_and_enterprise_patterns.xml
+│   │                                     # Project structure and enterprise conventions
+│   ├── 4_implementation_reference.xml
+│   │                                     # Implementation reference guidance
+│   └── 10_http_query_parameter_handling.xml
+│                                         # HTTP query parameter handling guidance
+└── skills/                               # Skill directory
 ```
 
 ## Getting Started
