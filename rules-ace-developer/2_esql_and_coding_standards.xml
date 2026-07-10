@@ -292,24 +292,16 @@ END;
       <principle priority="high">
         <name>Schema Consistency Within Project</name>
         <description>
-<<<<<<< HEAD
           All ESQL files within the same project directory should use the same BROKER SCHEMA. The ESQL files should be placed in the 
           directory that the namespace refers to. So if the schema is called com.weather.api, all esql files that use that schema 
           must be placed in WeatherAPI_App/com/weather/api
-=======
-          All ESQL files within the same project directory should use the same BROKER SCHEMA
->>>>>>> 25dfa89ebf812258133fd562c03063133b14c4b3
         </description>
         <rationale>
           Ensures modules can reference each other without namespace conflicts
         </rationale>
         <example><![CDATA[
 Project: WeatherAPI_App
-<<<<<<< HEAD
 Directory: WeatherAPI_App/com/weather/api
-=======
-Directory: WeatherAPI_App/
->>>>>>> 25dfa89ebf812258133fd562c03063133b14c4b3
 
 All ESQL files should use:
 BROKER SCHEMA com.weather.api
