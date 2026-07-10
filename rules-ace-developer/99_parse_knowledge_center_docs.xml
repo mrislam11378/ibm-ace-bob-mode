@@ -1,0 +1,415 @@
+<doc_parsing_guide>
+  <overview>
+    This rule defines procedures for reading IBM Knowledge Center / IBM Documentation pages
+    (ibm.com/docs) efficiently — minimising token cost, avoiding JavaScript rendering overhead,
+    and correctly resolving child page links.
+
+    Two categories of page exist on ibm.com/docs:
+      1. Static API pages  — served as raw DITA HTML by the content API endpoint (no JS needed)
+      2. JS-rendered pages — served by the Next.js frontend (require a browser to render)
+
+    The IBM Documentation content API makes most pages available as static HTML without a browser.
+    This is the preferred approach: lower latency, lower token cost, no headless browser required.
+  </overview>
+
+  <!-- ========================================
+       SECTION 1: IBM DOCS CONTENT API
+       ======================================== -->
+
+  <ibm_docs_content_api>
+    <description>
+      IBM Documentation exposes a content API that serves raw DITA HTML for each topic.
+      This avoids the JavaScript rendering layer entirely and returns clean, parseable HTML.
+    </description>
+
+    <endpoint_pattern>
+      https://www.ibm.com/docs/api/v1/content/{lang}/{product}/{version}?topic={slug}
+
+      Where:
+        lang    = en (English) or other locale
+        product = product identifier, e.g. app-connect
+        version = version string, e.g. 13.0.x
+        slug    = topic slug as it appears in the browser URL ?topic= parameter
+
+      Example (IBM ACE 13.0.x — ibmint generate tests command):
+        https://www.ibm.com/docs/api/v1/content/en/app-connect/13.0.x?topic=commands-ibmint-generate-tests-command
+
+      The slug MUST be taken from the browser URL — it cannot be derived from the DITA
+      HTML filename. See Section 3 for how to resolve child page slugs.
+    </endpoint_pattern>
+
+    <response_format>
+      The API returns raw DITA HTML — a complete &lt;html&gt; document with:
+        - Minimal &lt;head&gt; (meta tags, charset, title, link rels for navigation)
+        - &lt;body&gt; containing the topic content as semantic HTML
+        - &lt;a href="filename_.html"&gt; links to related topics (bare filenames, NOT slugs)
+        - No JavaScript, no CSS framework, no dynamic content
+      Response size is typically 3 000–20 000 chars per page (vs 50 000–100 000 for JS-rendered).
+    </response_format>
+
+    <success_detection>
+      A valid content API response:
+        - Has HTTP 200 status
+        - Contains &lt;body id="..."&gt; (the DITA topic ID)
+        - Does NOT contain "primaryCategory": "error" (IBM 404 page marker)
+        - Is typically 3 000+ characters
+
+      A 404 response:
+        - Still returns HTTP 200 but contains "primaryCategory": "error"
+        - Contains "IBM notice: The page you requested cannot be displayed"
+        - Check: $html -notmatch '"primaryCategory":\s*"error"'
+    </success_detection>
+
+    <powershell_fetch_procedure>
+      <description>Standard procedure to fetch and clean an IBM docs page on Windows</description>
+      <code><![CDATA[
+# Step 1: Fetch the raw DITA HTML via the content API
+$slug = "commands-ibmint-generate-tests-command"   # from browser URL ?topic= parameter
+$url  = "https://www.ibm.com/docs/api/v1/content/en/app-connect/13.0.x?topic=$slug"
+$html = (Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 30).Content
+
+# Step 2: Check it is not a 404
+if ($html -match '"primaryCategory":\s*"error"') {
+    Write-Error "Topic not found: $slug"
+    return
+}
+
+# Step 3: Strip HTML tags to extract clean text
+$text = $html -replace '(?s)<script[^>]*>.*?</script>', ''
+$text = $text -replace '(?s)<style[^>]*>.*?</style>', ''
+$text = $text -replace '<br\s*/?>', "`n"
+$text = $text -replace '<li[^>]*>', "`n- "
+$text = $text -replace '<h[1-6][^>]*>', "`n### "
+$text = $text -replace '</h[1-6]>', ''
+$text = $text -replace '<p[^>]*>', "`n"
+$text = $text -replace '<code[^>]*>', '`'
+$text = $text -replace '</code>', '`'
+$text = $text -replace '<pre[^>]*>', "`n``````"
+$text = $text -replace '</pre>', "``````"
+$text = $text -replace '<[^>]+>', ''
+$text = $text -replace '&amp;', '&'
+$text = $text -replace '&lt;', '<'
+$text = $text -replace '&gt;', '>'
+$text = $text -replace '&nbsp;', ' '
+$text = $text -replace '&#39;', "'"
+$text = $text -replace '  +', ' '
+$text = [regex]::Replace($text, '(\r?\n){3,}', "`n`n")
+$text = $text.Trim()
+Write-Host $text
+      ]]></code>
+    </powershell_fetch_procedure>
+
+    <link_extraction_procedure>
+      <description>
+        Extract all &lt;a href&gt; links from the raw DITA HTML. Links are bare filenames
+        (e.g. bi13020_.html) — NOT the browser slugs needed for the API. See Section 3
+        to resolve filenames to slugs.
+      </description>
+      <code><![CDATA[
+# Extract all anchor links from raw DITA HTML
+$anchors = [regex]::Matches($html, '<a[^>]+href="([^"]+)"[^>]*>([^<]*)</a>')
+$anchors | ForEach-Object {
+    $href = $_.Groups[1].Value
+    $text = $_.Groups[2].Value.Trim() -replace '\s+', ' '
+    if ($text -ne '' -and $href -ne '#' -and $href -notmatch '^http') {
+        Write-Host "[$text] -> $href"
+    }
+}
+      ]]></code>
+      <example_output><![CDATA[
+[Configure an integration server to record messages] -> bi13015_.html
+[Generate a test project by using ibmint generate tests] -> bi13020_.html
+[Compile the test project and create a BAR file] -> bi13025_.html
+[Run the tests using command line] -> bi13032_.html
+[Run the tests using the Toolkit] -> bi13035_.html
+      ]]></example_output>
+    </link_extraction_procedure>
+  </ibm_docs_content_api>
+
+  <!-- ========================================
+       SECTION 2: RESOLVING CHILD PAGE SLUGS
+       ======================================== -->
+
+  <resolving_child_page_slugs>
+    <problem>
+      The DITA HTML returned by the content API contains links as bare filenames:
+        &lt;a href="bi13020_.html"&gt;Generating tests by using the ibmint generate tests command&lt;/a&gt;
+
+      These bare filenames do NOT work as topic slugs in the API URL. The browser slug
+      (e.g. "dit-generating-tests-ibmint-command") is computed by IBM's JS routing layer
+      and is NOT published via any public API.
+
+      Attempting to use bare filenames as API slugs returns 404 error pages.
+    </problem>
+
+    <slug_discovery_methods>
+
+      <method name="1_known_slug" priority="best">
+        <description>
+          If you already have the browser URL for the page (from the user or from a previous
+          successful fetch), extract the slug directly from the ?topic= parameter.
+        </description>
+        <example><![CDATA[
+Browser URL:
+  https://www.ibm.com/docs/en/app-connect/13.0.x?topic=commands-ibmint-generate-tests-command
+
+Slug = "commands-ibmint-generate-tests-command"
+
+API URL:
+  https://www.ibm.com/docs/api/v1/content/en/app-connect/13.0.x?topic=commands-ibmint-generate-tests-command
+        ]]></example>
+      </method>
+
+      <method name="2_slug_from_page_text" priority="good">
+        <description>
+          The page text itself often contains references to child pages by their full topic slug
+          embedded in linked text. When a page lists child topics with descriptive titles, those
+          titles can be used to guess the slug using IBM's slug conventions.
+        </description>
+        <slug_conventions>
+          IBM docs slugs follow a pattern:
+            {prefix}-{kebab-case-title}
+          where prefix is a short category identifier (e.g. "dit", "commands", "cfg", "ts").
+
+          Examples:
+            "Generating tests from recorded messages" → dit-generating-tests-from-recorded-messages-in-message-flow
+            "ibmint generate tests command"           → commands-ibmint-generate-tests-command
+            "Configuring an integration server"       → cfg-configuring-integration-server (guessed)
+
+          Guessing is unreliable — verify with a fetch attempt before using.
+        </slug_conventions>
+      </method>
+
+      <method name="3_probe_and_verify" priority="reliable">
+        <description>
+          Build candidate slug guesses from the link text, then probe each one with the
+          content API. A response that does NOT contain "primaryCategory": "error" is valid.
+        </description>
+        <code><![CDATA[
+# Given a list of candidate slugs, find which ones are valid
+$baseApi = "https://www.ibm.com/docs/api/v1/content/en/app-connect/13.0.x?topic="
+$candidates = @(
+    "dit-configuring-integration-server-record-messages",
+    "dit-configuring-an-integration-server-to-record-messages",
+    "commands-ibmint-generate-tests-command"
+)
+
+foreach ($slug in $candidates) {
+    $html = (Invoke-WebRequest -Uri "$baseApi$slug" -UseBasicParsing -TimeoutSec 10).Content
+    if ($html -notmatch '"primaryCategory":\s*"error"' -and $html.Length -gt 2000) {
+        $title = if ($html -match '<h1[^>]*>([^<]+)</h1>') { $matches[1].Trim() } else { '?' }
+        Write-Host "VALID: $slug  →  $title"
+    } else {
+        Write-Host "404:   $slug"
+    }
+}
+        ]]></code>
+      </method>
+
+      <method name="4_js_rendered_page_scrape" priority="fallback">
+        <description>
+          The JS-rendered IBM docs page (fetched with Invoke-WebRequest) embeds child topic slugs
+          in its HTML. However: the slugs found in the rendered page are from IBM's GLOBAL
+          navigation sidebar (shared across all IBM products) — NOT the child topics of the
+          current page. This method only works if the child slugs happen to appear in the
+          navigation markup, which is unreliable.
+
+          Use this method as a last resort when probe-and-verify fails for all guesses.
+        </description>
+        <code><![CDATA[
+$r = Invoke-WebRequest -Uri "https://www.ibm.com/docs/en/app-connect/13.0.x?topic=dit-generating-tests-from-recorded-messages-in-message-flow" -UseBasicParsing -TimeoutSec 20
+$slugs = [regex]::Matches($r.Content, 'topic=([a-zA-Z0-9][a-zA-Z0-9_\-]{5,80})') |
+         ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
+# Filter to ACE-relevant slugs (exclude IBM-wide nav slugs)
+$slugs | Where-Object { $_ -match '^(dit|commands|cfg|ts|ac|an|bi|fm|re)' }
+        ]]></code>
+        <limitation>
+          The JS-rendered page does NOT embed child topic slugs. The topic= values found
+          are from the global IBM product navigation sidebar, not the page's child links.
+          This approach was verified NOT to work for IBM ACE docs child links.
+        </limitation>
+      </method>
+
+    </slug_discovery_methods>
+
+    <known_slug_patterns>
+      <description>
+        IBM ACE 13.0.x docs use these prefix patterns for topic slugs.
+        Use as a guide when constructing candidate slugs for probe-and-verify.
+      </description>
+      <patterns>
+        <pattern prefix="commands-" example="commands-ibmint-generate-tests-command">
+          CLI command reference pages
+        </pattern>
+        <pattern prefix="dit-" example="dit-generating-tests-from-recorded-messages-in-message-flow">
+          Integration testing topics (dit = Developing Integration Tests)
+        </pattern>
+        <pattern prefix="cfg-" example="cfg-configuring-...">
+          Configuration topics
+        </pattern>
+        <pattern prefix="ts-" example="ts-troubleshooting-...">
+          Troubleshooting topics
+        </pattern>
+      </patterns>
+    </known_slug_patterns>
+  </resolving_child_page_slugs>
+
+  <!-- ========================================
+       SECTION 3: DECISION PROCEDURE
+       ======================================== -->
+
+  <decision_procedure>
+    <description>
+      Use this decision tree whenever asked to read an IBM docs URL or follow its links.
+    </description>
+
+    <step number="1">
+      <title>Extract the topic slug from the URL the user provided</title>
+      <action>
+        Parse the ?topic= parameter from the browser URL.
+        Example: https://www.ibm.com/docs/en/app-connect/13.0.x?topic=SLUG
+        If the URL has no ?topic= parameter, it is a product homepage — fetch as-is.
+      </action>
+    </step>
+
+    <step number="2">
+      <title>Fetch the page via the content API (not the browser URL)</title>
+      <action>
+        Replace the browser URL domain+path with the content API endpoint:
+          Browser: https://www.ibm.com/docs/en/{product}/{version}?topic={slug}
+          API:     https://www.ibm.com/docs/api/v1/content/en/{product}/{version}?topic={slug}
+        Use Invoke-WebRequest with -UseBasicParsing.
+        Verify the response is NOT a 404 (check for "primaryCategory": "error").
+      </action>
+    </step>
+
+    <step number="3">
+      <title>Clean and read the page content</title>
+      <action>
+        Apply the HTML stripping procedure from Section 1 to extract clean text.
+        Read the cleaned text to answer the user's question.
+        Total token cost is typically 1 000–4 000 tokens per page.
+      </action>
+    </step>
+
+    <step number="4">
+      <title>Extract child links if required</title>
+      <action>
+        If the user asked to "follow all links" or "read child pages", apply the link
+        extraction procedure from Section 1 to get the list of linked filenames.
+        Then for each child link, follow the slug discovery procedure in Section 2
+        (method 1 if slug is known, method 3 probe-and-verify otherwise).
+        Fetch each valid child page using the content API.
+      </action>
+      <token_cost_warning>
+        Fetching all child pages multiplies token cost by the number of children.
+        Before fetching all children, summarise what the parent page says the children
+        cover and ask the user which ones are relevant.
+      </token_cost_warning>
+    </step>
+
+  </decision_procedure>
+
+  <!-- ========================================
+       SECTION 4: COMPLETE WORKED EXAMPLE
+       ======================================== -->
+
+  <worked_example>
+    <user_request>
+      Read https://www.ibm.com/docs/en/app-connect/13.0.x?topic=dit-generating-tests-from-recorded-messages-in-message-flow
+      and all its linked child pages.
+    </user_request>
+
+    <execution>
+
+      <step number="1">
+        <action>Extract slug from URL</action>
+        <result>slug = "dit-generating-tests-from-recorded-messages-in-message-flow"</result>
+      </step>
+
+      <step number="2">
+        <action>Fetch parent page via content API</action>
+        <command><![CDATA[
+$html = (Invoke-WebRequest -Uri "https://www.ibm.com/docs/api/v1/content/en/app-connect/13.0.x?topic=dit-generating-tests-from-recorded-messages-in-message-flow" -UseBasicParsing -TimeoutSec 30).Content
+        ]]></command>
+        <result>HTTP 200, 7411 chars. Not a 404. Content is raw DITA HTML.</result>
+      </step>
+
+      <step number="3">
+        <action>Extract child links from DITA HTML</action>
+        <result><![CDATA[
+[Configure an integration server to record messages] -> bi13015_.html
+[Generating tests by using ibmint generate tests command] -> bi13020_.html
+[Compiling a test project and creating a BAR file] -> bi13025_.html
+[Importing a test project into the Toolkit] -> bi13030_.html
+[Run the tests using command line] -> bi13032_.html
+[Run the tests using the Toolkit] -> bi13035_.html
+        ]]></result>
+      </step>
+
+      <step number="4">
+        <action>Resolve child slugs via probe-and-verify</action>
+        <finding>
+          Bare filenames (bi13015_, bi13020_, etc.) return 404 when used directly as slugs.
+          The "commands-ibmint-generate-tests-command" slug was already known and works.
+          Other child slugs require probing with candidate guesses based on prefix patterns.
+        </finding>
+        <known_working_slug>commands-ibmint-generate-tests-command → "Generating tests by using ibmint generate tests command"</known_working_slug>
+      </step>
+
+      <step number="5">
+        <action>Ask user which child pages to fetch (token cost management)</action>
+        <recommendation>
+          Rather than fetching all 6 child pages automatically, present the list to the user
+          and ask which are relevant. Each child page costs 1 000–4 000 tokens.
+        </recommendation>
+      </step>
+
+    </execution>
+  </worked_example>
+
+  <!-- ========================================
+       SECTION 5: TOKEN COST GUIDELINES
+       ======================================== -->
+
+  <token_cost_guidelines>
+    <comparison>
+      <method name="JS-rendered page (Invoke-WebRequest on browser URL)">
+        <raw_html_size>50 000–100 000 chars</raw_html_size>
+        <after_stripping>2 000–8 000 chars (but stripping is lossy for JS-rendered content)</after_stripping>
+        <token_cost>HIGH — large JS bundles inflate size even after tag stripping</token_cost>
+        <reliability>LOW — content is injected by JavaScript; static fetch returns empty body</reliability>
+        <use_when>Last resort only — when content API returns 404 for a known-valid page</use_when>
+      </method>
+      <method name="Content API (docs/api/v1/content endpoint)">
+        <raw_html_size>3 000–20 000 chars</raw_html_size>
+        <after_stripping>500–4 000 chars</after_stripping>
+        <token_cost>LOW — clean DITA HTML, no JS, no CSS frameworks</token_cost>
+        <reliability>HIGH — content is always present in the HTML body</reliability>
+        <use_when>PRIMARY method for all IBM docs pages</use_when>
+      </method>
+    </comparison>
+
+    <rules>
+      <rule priority="critical">
+        ALWAYS use the content API endpoint (docs/api/v1/content) as the first approach.
+        Never fetch the browser URL directly unless the content API returns a 404.
+      </rule>
+      <rule priority="high">
+        Save fetched HTML to a temp file (.bob/tmp_*.html) before processing.
+        Delete temp files after extracting the needed text.
+      </rule>
+      <rule priority="high">
+        When a page has multiple child links, summarise child page titles to the user
+        and ask which are needed BEFORE fetching them all.
+      </rule>
+      <rule priority="medium">
+        For large pages (20 000+ chars), use targeted text extraction with Select-String
+        on the cleaned text rather than passing the full text to the model context.
+      </rule>
+    </rules>
+  </token_cost_guidelines>
+
+</doc_parsing_guide>
+
+<!-- Made with Bob -->
