@@ -1,0 +1,416 @@
+<ace_test_java_patterns>
+  <overview>
+    All Java code rules, patterns, and examples for writing ACE v13 JUnit 5 test classes
+    using the com.ibm.integration.test.v1 library (NodeSpy, NodeStub, SpyObjectReference,
+    TestMessageAssembly, TestSetup). Covers node-level unit tests, whole-flow integration
+    tests, and the NodeStub API for mocking downstream nodes.
+    For recorded .mxml file details, see 5a_recorded_messages.xml.
+    For the step-by-step workflow, see 5_ace_test_project_guide.xml.
+  </overview>
+
+  <!-- ========================================
+       SECTION 4: JAVA TEST CLASS PATTERNS
+       ======================================== -->
+
+  <java_test_patterns>
+    <description>
+      All test classes use JUnit 5 (@Test, @AfterEach, @DisplayName) and the ACE
+      com.ibm.integration.test.v1 library. The core pattern is NodeSpy.evaluate().
+    </description>
+
+    <required_imports><![CDATA[
+import static com.ibm.integration.test.v1.Matchers.equalsMessage;
+import static com.ibm.integration.test.v1.Matchers.nodeCallCountIs;
+import static com.ibm.integration.test.v1.Matchers.terminalPropagateCountIs;
+import static org.hamcrest.MatcherAssert.assertThat;
+
+import java.io.InputStream;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import com.ibm.integration.test.v1.NodeSpy;
+import com.ibm.integration.test.v1.SpyObjectReference;
+import com.ibm.integration.test.v1.TestMessageAssembly;
+import com.ibm.integration.test.v1.TestSetup;
+import com.ibm.integration.test.v1.exception.TestException;
+    ]]></required_imports>
+
+    <mandatory_cleanup>
+      <description>
+        EVERY test class MUST have an @AfterEach method that calls TestSetup.restoreAllMocks().
+        This prevents mock state leaking between tests.
+      </description>
+      <code><![CDATA[
+@AfterEach
+public void cleanupTest() throws TestException {
+    TestSetup.restoreAllMocks();
+}
+      ]]></code>
+    </mandatory_cleanup>
+
+    <helper_method_load_assembly>
+      <description>
+        Always include this private helper for loading .mxml files from the classpath.
+        Use it in every test to load both input and expected assemblies.
+      </description>
+      <code><![CDATA[
+private TestMessageAssembly loadAssembly(String resourcePath) throws TestException {
+    TestMessageAssembly assembly = new TestMessageAssembly();
+    try {
+        InputStream stream = Thread.currentThread()
+                .getContextClassLoader()
+                .getResourceAsStream(resourcePath);
+        if (stream == null) {
+            throw new TestException("Cannot find recorded message: " + resourcePath);
+        }
+        assembly.buildFromRecordedMessageAssembly(stream);
+    } catch (Exception ex) {
+        throw new TestException("Failed to load recorded message: " + resourcePath, ex);
+    }
+    return assembly;
+}
+      ]]></code>
+    </helper_method_load_assembly>
+
+    <pattern name="node_test_from_recorded_messages">
+      <description>
+        Standard pattern for a node-level test using recorded .mxml files.
+        Replace placeholders:
+          [APP]       = application name (e.g. "WeatherAPI_App")
+          [FLOW]      = message flow name (e.g. "getCurrentWeather")
+          [NODE]      = node label as shown in the flow canvas (e.g. "Prepare Request")
+          [INPUT]     = resource path to the input .mxml (the checkpoint BEFORE this node)
+          [EXPECTED]  = resource path to the expected output .mxml (the checkpoint FROM this node)
+          [TERMINAL]  = output terminal name the node propagates to (e.g. "out", "failure", "out1")
+      </description>
+      <code><![CDATA[
+@Test
+@DisplayName("[FLOW] — [NODE] TC001 — [description] (recorded)")
+public void [flow]_[Node]_TC001() throws TestException {
+
+    // Spy on the node under test
+    SpyObjectReference nodeRef = new SpyObjectReference()
+            .application("[APP]")
+            .messageFlow("[FLOW]")
+            .node("[NODE]");
+
+    NodeSpy nodeSpy = new NodeSpy(nodeRef);
+
+    // Inject the recorded input checkpoint
+    TestMessageAssembly inputAssembly = loadAssembly("/[INPUT].mxml");
+
+    // Execute the node
+    nodeSpy.evaluate(inputAssembly, true, "in");
+
+    // Assert the node was called once
+    assertThat(nodeSpy, nodeCallCountIs(1));
+
+    // Assert it propagated via the expected terminal
+    assertThat(nodeSpy, terminalPropagateCountIs("[TERMINAL]", 1));
+
+    // Get the actual output and compare to the recorded expected output
+    TestMessageAssembly actualOutput   = nodeSpy.propagatedMessageAssembly("[TERMINAL]", 1);
+    TestMessageAssembly expectedOutput = loadAssembly("/[EXPECTED].mxml");
+
+    assertThat(actualOutput, equalsMessage(expectedOutput));
+}
+      ]]></code>
+    </pattern>
+
+    <pattern name="node_test_with_ignore_paths">
+      <description>
+        When the node makes outbound calls (e.g. HTTP Request node) or produces time-varying
+        output, use ignorePath() to exclude fields that legitimately differ from the recording.
+        Common fields to ignore for HTTP Request nodes:
+          /Message/BLOB/BLOB                            — response body (content changes over time)
+          /Message/HTTPResponseHeader/Date              — HTTP date header
+          /Message/HTTPResponseHeader/CDN-CachedAt      — CDN timestamp
+          /Message/HTTPResponseHeader/CDN-RequestId     — unique per request
+          /Message/HTTPResponseHeader/CDN-Cache         — cache hit/miss varies
+          /Message/HTTPResponseHeader/x-weatherapi-qpm-left — rate limit counter
+          /LocalEnvironment/WrittenDestination          — contains request timestamps
+      </description>
+      <code><![CDATA[
+assertThat(actualOutput, equalsMessage(expectedOutput)
+        .ignorePath("/Message/BLOB/BLOB", false)
+        .ignorePath("/Message/HTTPResponseHeader/Date", false)
+        .ignorePath("/Message/HTTPResponseHeader/CDN-CachedAt", false)
+        .ignorePath("/Message/HTTPResponseHeader/CDN-RequestId", false)
+        .ignorePath("/Message/HTTPResponseHeader/CDN-Cache", false)
+        .ignorePath("/Message/HTTPResponseHeader/x-weatherapi-qpm-left", false)
+        .ignorePath("/LocalEnvironment/WrittenDestination", true)
+);
+      ]]></code>
+      <ignorepath_syntax>
+        ignorePath(path, recursive)
+          path      = "/" separated path into the message tree
+          recursive = true  → ignore the entire subtree rooted at path
+          recursive = false → ignore only the leaf value at path
+      </ignorepath_syntax>
+    </pattern>
+
+    <pattern name="subflow_node_reference">
+      <description>
+        For nodes INSIDE a subflow, use .subflowNode() before .node() in the SpyObjectReference.
+      </description>
+      <code><![CDATA[
+SpyObjectReference nodeRef = new SpyObjectReference()
+        .application("[APP]")
+        .messageFlow("[FLOW]")
+        .subflowNode("[SubflowNodeLabel]")   // label of the subflow instance in the parent flow
+        .node("[NodeInsideSubflow]");        // label of the node inside the subflow
+      ]]></code>
+    </pattern>
+
+    <pattern name="terminal_assert_only">
+      <description>
+        When you only want to check that a node propagated to the correct terminal
+        (without comparing the full message tree), omit the equalsMessage assertion.
+        Useful for quick smoke tests or when the output is non-deterministic.
+      </description>
+      <code><![CDATA[
+nodeSpy.evaluate(inputAssembly, true, "in");
+assertThat(nodeSpy, nodeCallCountIs(1));
+assertThat(nodeSpy, terminalPropagateCountIs("out", 1));
+// No equalsMessage — just verifying routing behaviour
+      ]]></code>
+    </pattern>
+
+    <pattern name="mock_downstream_node">
+      <description>
+        When a node makes an outbound call you want to prevent (e.g. HTTP Request to a real backend),
+        use NodeSpy.setStopAtInputTerminal("in") on the downstream node to intercept the message
+        before it enters and executes that node. This makes the test fully offline / hermetic.
+      </description>
+      <code><![CDATA[
+// Spy on the node that should NOT fire (e.g. HTTP Request)
+SpyObjectReference httpRequestRef = new SpyObjectReference()
+        .application("[APP]")
+        .messageFlow("[FLOW]")
+        .node("HTTP Request");
+
+NodeSpy httpRequestSpy = new NodeSpy(httpRequestRef);
+
+// Stop BEFORE the HTTP Request node sends its message out
+httpRequestSpy.setStopAtInputTerminal("in");
+
+// Now spy on and drive the upstream node
+SpyObjectReference computeRef = new SpyObjectReference()
+        .application("[APP]")
+        .messageFlow("[FLOW]")
+        .node("Prepare Request");
+
+NodeSpy computeSpy = new NodeSpy(computeRef);
+computeSpy.propagate(loadAssembly("/[INPUT].mxml"), "out");
+
+// Assert the HTTP Request node received the correct message
+assertThat(httpRequestSpy, nodeCallCountIs(1));
+      ]]></code>
+    </pattern>
+  </java_test_patterns>
+
+  <!-- ========================================
+       SECTION 10: NodeStub API (WHOLE-FLOW TESTS)
+       ======================================== -->
+
+  <nodestub_api>
+    <description>
+      NodeStub is an ACE Integration Test API that prevents a node from executing its
+      normal logic and from propagating messages to downstream nodes. It is used alongside
+      NodeSpy for whole-flow integration tests to:
+      - Prevent real outbound calls (HTTP requests, MQ writes) during testing
+      - Isolate specific paths through the flow
+      - Mock external service responses
+
+      NodeSpy (used in node-level unit tests) observes a node and lets it run.
+      NodeStub prevents a node from running altogether, acting as a stop point.
+    </description>
+
+    <required_imports><![CDATA[
+import com.ibm.integration.test.v1.NodeStub;
+import com.ibm.integration.test.v1.NodeSpy;
+import com.ibm.integration.test.v1.SpyObjectReference;
+import com.ibm.integration.test.v1.TestMessageAssembly;
+import com.ibm.integration.test.v1.TestSetup;
+import com.ibm.integration.test.v1.exception.TestException;
+    ]]></required_imports>
+
+    <pattern name="whole_flow_with_stubs">
+      <description>
+        Standard pattern for a whole-flow integration test that:
+        1. Uses NodeSpy on the INPUT node to inject a recorded message (replays real input)
+        2. Places NodeStubs on OUTPUT nodes to intercept messages before they reach queues/services
+        3. Asserts that the expected messages arrived at the output stubs
+        This tests the ENTIRE flow end-to-end without triggering real external systems.
+      </description>
+      <code><![CDATA[
+@Test
+@DisplayName("WholeFlow — Normal path — input arrives at expected output nodes")
+public void wholeFlow_FlowOrder_Test() throws TestException {
+
+    // 1. Spy on the INPUT node to inject the recorded message
+    SpyObjectReference inputNodeRef = new SpyObjectReference()
+            .application("Common_Realtime_Workflow")
+            .messageFlow("Common_Realtime_Workflow_MF")
+            .node("IIBHUB.COMMONREALTIME.INPUT");   // label of the MQ Input node
+
+    NodeSpy inputNodeSpy = new NodeSpy(inputNodeRef);
+
+    // 2. Stub OUTPUT nodes to prevent real MQ writes
+    SpyObjectReference salesforceOutputRef = new SpyObjectReference()
+            .application("Common_Realtime_Workflow")
+            .messageFlow("Common_Realtime_Workflow_MF")
+            .node("IIBHUB.SALESFORCE.INPUT");       // label of the MQ Output node
+
+    NodeStub salesforceStub = new NodeStub(salesforceOutputRef);
+    salesforceStub.setStopAtInputTerminal("in");    // intercept before the node fires
+
+    SpyObjectReference dbReportingOutputRef = new SpyObjectReference()
+            .application("Common_Realtime_Workflow")
+            .messageFlow("Common_Realtime_Workflow_MF")
+            .node("IIBHUB.DBREPORTING.INPUT");
+
+    NodeStub dbReportingStub = new NodeStub(dbReportingOutputRef);
+    dbReportingStub.setStopAtInputTerminal("in");
+
+    // 3. Stub the HTTP Request node inside the subflow to mock the external service
+    SpyObjectReference httpRequestRef = new SpyObjectReference()
+            .application("Common_Realtime_Workflow")
+            .messageFlow("Common_Realtime_Workflow_MF")
+            .subflowNode("CommonMemberPreference")  // subflow instance label
+            .node("MemInqHTTP Request");             // node inside the subflow
+
+    NodeStub httpRequestStub = new NodeStub(httpRequestRef);
+    // Provide a recorded response to feed back into the flow
+    TestMessageAssembly mockResponse = loadAssembly("/recorded_http_response.mxml");
+    httpRequestStub.setReturnValue(mockResponse, "out");   // replay recorded response
+
+    // 4. Inject the input message
+    TestMessageAssembly inputMsg = loadAssembly("/IIBHUB.COMMONREALTIME.INPUT-0.mxml");
+    inputNodeSpy.evaluate(inputMsg, true, "out");          // drive from input node
+
+    // 5. Assert messages arrived at expected output stubs
+    assertThat(salesforceStub, nodeCallCountIs(1));
+    assertThat(dbReportingStub, nodeCallCountIs(1));
+
+    // 6. Optionally compare content against recorded expected assemblies
+    assertThat(salesforceStub.propagatedMessageAssembly("in", 1),
+            equalsMessage(loadAssembly("/IIBHUB.SALESFORCE.INPUT-expected.mxml")));
+}
+      ]]></code>
+    </pattern>
+
+    <pattern name="error_path_whole_flow">
+      <description>
+        Testing the error/catch path in a whole-flow test.
+        Inject a message that triggers the error path and assert the error output.
+      </description>
+      <code><![CDATA[
+@Test
+@DisplayName("WholeFlow — Error path — catch terminal routes to error output")
+public void wholeFlow_LogError_Test() throws TestException {
+
+    // Stub the error output node
+    SpyObjectReference errorReplayRef = new SpyObjectReference()
+            .application("Common_Realtime_Workflow")
+            .messageFlow("Common_Realtime_Workflow_MF")
+            .node("COMMON.ERRORREPLAY");
+
+    NodeStub errorReplayStub = new NodeStub(errorReplayRef);
+    errorReplayStub.setStopAtInputTerminal("in");
+
+    // Spy on the input node
+    SpyObjectReference inputRef = new SpyObjectReference()
+            .application("Common_Realtime_Workflow")
+            .messageFlow("Common_Realtime_Workflow_MF")
+            .node("IIBHUB.COMMONREALTIME.INPUT");
+
+    NodeSpy inputSpy = new NodeSpy(inputRef);
+
+    // Inject a recorded message that triggers the error scenario
+    TestMessageAssembly errorInput = loadAssembly("/error-scenario-input.mxml");
+    inputSpy.evaluate(errorInput, true, "out");
+
+    // Verify the error output was triggered
+    assertThat(errorReplayStub, nodeCallCountIs(1));
+}
+      ]]></code>
+    </pattern>
+
+    <nodestub_vs_nodespy>
+      <description>Key differences between NodeStub and NodeSpy</description>
+      <table>
+        <row>
+          <aspect>Purpose</aspect>
+          <nodespy>Observe a node executing normally</nodespy>
+          <nodestub>Prevent a node from executing at all</nodestub>
+        </row>
+        <row>
+          <aspect>Node execution</aspect>
+          <nodespy>Node runs its full logic</nodespy>
+          <nodestub>Node logic is skipped</nodestub>
+        </row>
+        <row>
+          <aspect>Downstream propagation</aspect>
+          <nodespy>Node propagates normally</nodespy>
+          <nodestub>Propagation is stopped</nodestub>
+        </row>
+        <row>
+          <aspect>setReturnValue</aspect>
+          <nodespy>Not available</nodespy>
+          <nodestub>Can feed a mock response back into the flow</nodestub>
+        </row>
+        <row>
+          <aspect>Use case</aspect>
+          <nodespy>Unit test: test what THIS node produces</nodespy>
+          <nodestub>Integration test: mock external services, stop output nodes</nodestub>
+        </row>
+      </table>
+    </nodestub_vs_nodespy>
+  </nodestub_api>
+
+  <!-- ========================================
+       SECTION 15: GENERATED vs MANUAL TESTS
+       ======================================== -->
+
+  <generated_vs_manual_tests>
+    <comparison>
+      <aspect name="Effort to create">
+        <generated>Low — ibmint generate tests produces all test cases automatically</generated>
+        <manual>High — requires understanding the flow, writing Java, choosing assertions</manual>
+      </aspect>
+      <aspect name="Test coverage">
+        <generated>Node-by-node: each node transition becomes a test case</generated>
+        <manual>Can test complete end-to-end scenarios with multiple assertions</manual>
+      </aspect>
+      <aspect name="Brittleness">
+        <generated>High — tightly coupled to recorded messages; any flow change may break tests</generated>
+        <manual>Lower — tests are written against the intent of the flow, not exact byte values</manual>
+      </aspect>
+      <aspect name="Sequential propagation handling">
+        <generated>Poor — assumes parallel propagation, fails for sequential patterns</generated>
+        <manual>Good — can be written to match actual flow execution order</manual>
+      </aspect>
+      <aspect name="Maintenance">
+        <generated>Difficult — modifying generated tests requires re-understanding recorded data</generated>
+        <manual>Easier — test intent is self-documenting in Java method names and comments</manual>
+      </aspect>
+      <aspect name="Recommended use">
+        <generated>Migration testing (v12 → v13) and quick regression baseline</generated>
+        <manual>Long-lived test suites, complex flows, pipelines requiring stability</manual>
+      </aspect>
+    </comparison>
+
+    <recommendation>
+      Use generated tests to rapidly establish a regression baseline during migration projects.
+      Invest in manual whole-flow integration tests (NodeSpy + NodeStub) for flows that will
+      be actively maintained and evolved. The two approaches complement each other:
+      generated tests catch regressions; manual tests document business requirements.
+    </recommendation>
+  </generated_vs_manual_tests>
+
+</ace_test_java_patterns>
+
+<!-- Made with Bob -->
