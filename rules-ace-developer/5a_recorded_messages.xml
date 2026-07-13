@@ -1,0 +1,297 @@
+<ace_test_recorded_messages>
+  <overview>
+    Everything about recorded .mxml message files in ACE v13 test projects:
+    how to enable recording, the file naming convention, checkpoint structure,
+    how to map checkpoints to node-level tests, common failure patterns caused
+    by recorded data, and how to read/parse .mxml files manually.
+    For Java test code that consumes these files, see 5b_java_test_patterns.xml.
+    For the step-by-step workflow, see 5_ace_test_project_guide.xml.
+  </overview>
+
+  <!-- ========================================
+       SECTION 3: RECORDED MESSAGE FILES (.mxml)
+       ======================================== -->
+
+  <recorded_messages>
+    <description>
+      The ACE RecordedMessageManager captures message assemblies at every node transition in a
+      running flow. Each captured checkpoint is saved as an .mxml file. These files are the
+      PREFERRED source of test data because they contain real runtime message trees.
+    </description>
+
+    <how_to_enable_recording>
+      <description>Enable recording in the integration server overrides/server.conf.yaml</description>
+      <example><![CDATA[
+ResourceManagers:
+  RecordedMessageManager:
+    recordedMessagePath: '/path/to/recording/directory'
+    recordAllMessages: true
+      ]]></example>
+    </how_to_enable_recording>
+
+    <file_naming_convention>
+      <description>
+        Recorded files follow the naming convention:
+        [messageId]-[propagationCount].mxml
+
+        The propagationCount is a sequential integer starting at 0 for the input node.
+        Each subsequent node transition increments it by 1.
+      </description>
+      <example><![CDATA[
+000071A0-6A4EAD36-00000001-0.mxml   ← propagationCount=0: HTTP Input → out (the trigger)
+000071A0-6A4EAD36-00000001-1.mxml   ← propagationCount=1: Compute → out
+000071A0-6A4EAD36-00000001-2.mxml   ← propagationCount=2: HTTP Request → out (backend response)
+      ]]></example>
+    </file_naming_convention>
+
+    <checkpoint_structure>
+      <description>
+        Each .mxml file is a MessageAssembly snapshot. It encodes four internal trees:
+        - message: headers and payload at this point
+        - localEnvironment: LocalEnvironment (HTTP, WrittenDestination, etc.)
+        - environment: Environment variables set by nodes
+        - exceptionList: any exceptions at this point
+
+        A checkpoint element captures WHERE in the flow this snapshot was taken:
+      </description>
+      <checkpoint_fields>
+        <field name="messageId">Unique identifier grouping all checkpoints for one message invocation</field>
+        <field name="propagationCount">Sequential position in the flow (0 = first node output)</field>
+        <field name="nodeCallDepth">Depth of the node call stack when captured</field>
+        <field name="timestamp">Exact time the checkpoint was recorded</field>
+        <field name="source">
+          The node that EMITTED the message:
+          - name: node label (matches the label used in SpyObjectReference.node("..."))
+          - type: node type (ComIbmComputeNode, ComIbmWSInputNode, etc.)
+          - terminal: which terminal fired (out, failure, out1, etc.)
+          - application, messageFlow, subflow path
+          - inputNode: TRUE if this is an input-type node
+        </field>
+        <field name="target">
+          The node that will RECEIVE the message (same fields as source)
+        </field>
+      </checkpoint_fields>
+      <how_to_read_checkpoint>
+        - The SOURCE identifies WHICH NODE produced this message and via WHICH TERMINAL
+        - The TARGET identifies which node will receive it
+        - For node N under test: use the checkpoint where TARGET=N as INPUT,
+          and the checkpoint where SOURCE=N as the expected OUTPUT
+      </how_to_read_checkpoint>
+    </checkpoint_structure>
+
+    <mapping_to_tests>
+      <description>
+        Map recorded checkpoints to node-level tests as follows:
+        For each node N in the flow:
+          - INPUT  to node N = the .mxml where TARGET.node = N  (i.e., propagationCount = N's position - 1)
+          - OUTPUT of node N = the .mxml where SOURCE.node = N  (i.e., propagationCount = N's position)
+
+        Example for a flow: HTTP Input(0) → Prepare Request(1) → HTTP Request(2) → HTTP Reply
+          Node "Prepare Request":
+            input  = checkpoint -0  (SOURCE=HTTP Input, TARGET=Prepare Request)
+            output = checkpoint -1  (SOURCE=Prepare Request, TARGET=HTTP Request)
+          Node "HTTP Request":
+            input  = checkpoint -1  (SOURCE=Prepare Request, TARGET=HTTP Request)
+            output = checkpoint -2  (SOURCE=HTTP Request, TARGET=HTTP Reply)
+      </description>
+    </mapping_to_tests>
+
+    <where_to_place_mxml_files>
+      Copy the .mxml files from the RecordedMessageManager output directory into:
+      [AppName]_Test/src/main/resources/
+      They are loaded at runtime via the classloader as classpath resources.
+    </where_to_place_mxml_files>
+  </recorded_messages>
+
+  <!-- ========================================
+       SECTION 13: COMMON FAILURE POINTS AND FIXES
+       ======================================== -->
+
+  <common_failures>
+    <failure name="timestamp_mismatch">
+      <description>
+        The most common JUnit test failure in auto-generated tests. Recorded messages
+        capture timestamps at recording time; when tests re-execute, current system time
+        differs, causing field comparison failures.
+      </description>
+      <example_error><![CDATA[
+java.lang.AssertionError:
+Expected: TestMessageAssemblies should have matching message trees.
+     but: Expected value '2025-10-01 15:03:20.104670'
+          but was '2025-10-28 13:49:27.878221'
+          (path: /Message/XMLNSC/db_record_data/createdDate)
+      ]]></example_error>
+      <fix>
+        Use ignorePath() to exclude the time-varying fields from comparison.
+        Navigate to the line referenced in the error (e.g., tests.java:549) and add
+        ignorePath() calls for the affected paths.
+      </fix>
+      <before><![CDATA[
+assertThat(actualAssembly, equalsMessage(expectedAssembly));
+      ]]></before>
+      <after><![CDATA[
+assertThat(actualAssembly, equalsMessage(expectedAssembly)
+        .ignorePath("/Message/XMLNSC/db_record_data/createdDate", false)
+        .ignorePath("/Message/XMLNSC/db_record_data/sfModifiedDate", false)
+);
+      ]]></after>
+      <common_paths_to_ignore>
+        <path>/Message/XMLNSC/**/createdDate</path>
+        <path>/Message/XMLNSC/**/modifiedDate</path>
+        <path>/Message/XMLNSC/**/timestamp</path>
+        <path>/Message/HTTPResponseHeader/Date</path>
+        <path>/Message/HTTPResponseHeader/CDN-CachedAt</path>
+        <path>/Message/HTTPResponseHeader/CDN-RequestId</path>
+        <path>/Message/HTTPResponseHeader/CDN-Cache</path>
+        <path>/Message/HTTPResponseHeader/x-weatherapi-qpm-left</path>
+        <path>/LocalEnvironment/WrittenDestination</path>
+      </common_paths_to_ignore>
+    </failure>
+
+    <failure name="propagation_count_mismatch">
+      <description>
+        Auto-generated tests assume all node propagations happen simultaneously and
+        independently. In real flows with sequential propagation patterns (Node A → Node B
+        waits for Node C to finish before Node A → Node D), the generated test may expect
+        a propagation that has not occurred yet.
+      </description>
+      <example_pattern>
+        Node A propagates out → Node B → Node C (finishes) → returns to Node A → Node A
+        propagates out1 → Node D. The generated test may expect BOTH Node B and Node D
+        to be called simultaneously, failing with propagation count = 0 on Node D.
+      </example_pattern>
+      <example_error><![CDATA[
+java.lang.AssertionError:
+Expected: Terminal:"out" to have propagate count:1
+     but: Node "Store Input Message" Terminal:"out" has propagate count:0
+      ]]></example_error>
+      <fix_option_1>
+        Modify the generated test to remove or adjust the propagation count assertion for
+        the terminal that fires after the sequential execution completes.
+      </fix_option_1>
+      <fix_option_2>
+        Temporarily disable the failing test with @Disabled until it can be rewritten as
+        a whole-flow integration test (Section 10 of 5_ace_test_project_guide.xml).
+        <code><![CDATA[
+@Disabled("Propagation count mismatch due to sequential node execution — rewrite as whole-flow test")
+@Test
+public void OndotWorkflow_OndotWorkflow_MF_Store_Input_Message_TestCase_001() throws TestException {
+    // existing test logic
+}
+        ]]></code>
+      </fix_option_2>
+      <recommendation>
+        Propagation count mismatches usually indicate that auto-generated tests are not the
+        right approach for that node. Write a whole-flow integration test instead
+        that tests the complete message propagation lifecycle.
+      </recommendation>
+    </failure>
+
+    <failure name="ssl_handshake_exception">
+      <description>
+        Tests run at the Integration Server level (NOT the Integration Node level).
+        SSL/TLS configurations defined in node.conf.yaml (truststore, keystore, certificates)
+        are NOT applied during test execution. This causes SSLHandshakeException when tests
+        attempt HTTPS connections.
+      </description>
+      <example_error><![CDATA[
+TestException(BIP3165) BIP3165E: An error occurred whilst performing an SSL socket operation.
+Operation: connect.
+Error Text: javax.net.ssl.SSLHandshakeException: No X509TrustManager implementation available.
+      ]]></example_error>
+      <fix>
+        Copy the required security configuration entries from node.conf.yaml into the
+        execution group's overrides/server.conf.yaml:
+        <code><![CDATA[
+# In servers/<execution_group_name>/overrides/server.conf.yaml
+BrokerRegistry:
+  brokerTruststoreFile: '/path/to/truststore.jks'
+        ]]></code>
+      </fix>
+      <rule priority="critical">
+        Always place security configuration in server.conf.yaml, not node.conf.yaml,
+        when it is needed for test execution.
+      </rule>
+    </failure>
+
+    <failure name="generated_tests_brittle">
+      <description>
+        Auto-generated tests are tightly coupled to the recorded messages and are brittle —
+        any change to the application may require regenerating and reimporting tests.
+      </description>
+      <symptoms>
+        <symptom>Tests that passed yesterday fail after a minor code change</symptom>
+        <symptom>Large number of ignorePath() calls needed to maintain tests</symptom>
+        <symptom>Tests difficult to understand without reading both .mxml files and generated Java</symptom>
+      </symptoms>
+      <recommendation>
+        Use generated tests as a starting point and for regression testing during migration.
+        For long-lived test suites, invest in manually written whole-flow integration tests
+        that are more resilient to application changes.
+      </recommendation>
+    </failure>
+  </common_failures>
+
+  <!-- ========================================
+       SECTION 14: PARSING .mxml FILES MANUALLY
+       (checkpoint_structure/fields are in Section 3 above)
+       ======================================== -->
+
+  <parsing_mxml_files>
+    <bash_script_for_source_target>
+      <description>
+        With many .mxml files, manually reading source/target is tedious.
+        Use this bash script with xmllint to quickly parse all files:
+      </description>
+      <code><![CDATA[
+#!/bin/bash
+# parse_mxml.sh — print source and target node for each .mxml file
+# Requires: xmllint (install: sudo snap install libxml2)
+
+for f in *.mxml; do
+  echo "File: $f"
+  src=$(xmllint --xpath \
+    "string(//*[local-name()='checkpoint']/*[local-name()='source']/*[local-name()='name'])" \
+    "$f" 2>/dev/null)
+  tgt=$(xmllint --xpath \
+    "string(//*[local-name()='checkpoint']/*[local-name()='target']/*[local-name()='name'])" \
+    "$f" 2>/dev/null)
+  echo "  Source: $src"
+  echo "  Target: $tgt"
+  echo
+done
+      ]]></code>
+      <installation>
+        Linux: sudo apt-get install libxml2-utils
+        Snap:  sudo snap install libxml2
+        Windows: use xmllint from the libxml2 Windows binary package
+      </installation>
+    </bash_script_for_source_target>
+
+    <mapping_table_example>
+      <description>
+        Example output from parse_mxml.sh for getCurrentWeather flow:
+      </description>
+      <table><![CDATA[
+File: 000071A0-6A4EAD36-00000001-0.mxml
+  Source: HTTP Input
+  Target: Prepare Request
+
+File: 000071A0-6A4EAD36-00000001-1.mxml
+  Source: Prepare Request
+  Target: HTTP Request
+
+File: 000071A0-6A4EAD36-00000001-2.mxml
+  Source: HTTP Request
+  Target: HTTP Reply
+
+Therefore:
+  Test "Prepare Request": input=*-0.mxml  expected=*-1.mxml  terminal=out
+  Test "HTTP Request":    input=*-1.mxml  expected=*-2.mxml  terminal=out  (use ignorePath for live response)
+      ]]></table>
+    </mapping_table_example>
+  </parsing_mxml_files>
+
+</ace_test_recorded_messages>
+
+<!-- Made with Bob -->

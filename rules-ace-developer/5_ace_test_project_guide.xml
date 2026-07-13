@@ -74,289 +74,11 @@
   <!-- Sections 1 (when_to_create) and 2 (project_structure) have been moved to
        3a_test_project_structure_and_enterprise_patterns.xml -->
 
-  <!-- ========================================
-       SECTION 3: RECORDED MESSAGE FILES (.mxml)
-       ======================================== -->
+  <!-- Sections 3 (recorded_messages) and 13+14 (common_failures, understanding_recorded_messages)
+       have been moved to 5a_recorded_messages.xml -->
 
-  <recorded_messages>
-    <description>
-      The ACE RecordedMessageManager captures message assemblies at every node transition in a
-      running flow. Each captured checkpoint is saved as an .mxml file. These files are the
-      PREFERRED source of test data because they contain real runtime message trees.
-    </description>
-
-    <how_to_enable_recording>
-      <description>Enable recording in the integration server overrides/server.conf.yaml</description>
-      <example><![CDATA[
-ResourceManagers:
-  RecordedMessageManager:
-    recordedMessagePath: '/path/to/recording/directory'
-    recordAllMessages: true
-      ]]></example>
-    </how_to_enable_recording>
-
-    <file_naming_convention>
-      <description>
-        Recorded files follow the naming convention:
-        [messageId]-[propagationCount].mxml
-
-        The propagationCount is a sequential integer starting at 0 for the input node.
-        Each subsequent node transition increments it by 1.
-      </description>
-      <example><![CDATA[
-000071A0-6A4EAD36-00000001-0.mxml   ← propagationCount=0: HTTP Input → out (the trigger)
-000071A0-6A4EAD36-00000001-1.mxml   ← propagationCount=1: Compute → out
-000071A0-6A4EAD36-00000001-2.mxml   ← propagationCount=2: HTTP Request → out (backend response)
-      ]]></example>
-    </file_naming_convention>
-
-    <checkpoint_structure>
-      <description>
-        Each .mxml file contains a MessageAssembly with a checkpoint section that identifies:
-        - messageId: groups all checkpoints for the same message invocation
-        - propagationCount: sequential position in the flow
-        - source: the node and terminal that EMITTED this message
-        - target: the node and terminal that will RECEIVE this message
-        - message: the full message tree at this point
-        - localEnvironment: LocalEnvironment tree at this point
-        - environment: Environment tree at this point
-        - exceptionList: any exceptions at this point
-      </description>
-      <how_to_read_checkpoint>
-        To understand which node a checkpoint belongs to:
-        - The checkpoint SOURCE tells you WHICH NODE produced the message and via WHICH TERMINAL
-        - The checkpoint TARGET tells you which node will receive it
-        - Use SOURCE to identify the node under test: the input is the PREVIOUS checkpoint,
-          the output is THIS checkpoint
-      </how_to_read_checkpoint>
-    </checkpoint_structure>
-
-    <mapping_to_tests>
-      <description>
-        Map recorded checkpoints to node-level tests as follows:
-        For each node N in the flow:
-          - INPUT  to node N = the .mxml where TARGET.node = N  (i.e., propagationCount = N's position - 1)
-          - OUTPUT of node N = the .mxml where SOURCE.node = N  (i.e., propagationCount = N's position)
-
-        Example for a flow: HTTP Input(0) → Prepare Request(1) → HTTP Request(2) → HTTP Reply
-          Node "Prepare Request":
-            input  = checkpoint -0  (SOURCE=HTTP Input, TARGET=Prepare Request)
-            output = checkpoint -1  (SOURCE=Prepare Request, TARGET=HTTP Request)
-          Node "HTTP Request":
-            input  = checkpoint -1  (SOURCE=Prepare Request, TARGET=HTTP Request)
-            output = checkpoint -2  (SOURCE=HTTP Request, TARGET=HTTP Reply)
-      </description>
-    </mapping_to_tests>
-
-    <where_to_place_mxml_files>
-      Copy the .mxml files from the RecordedMessageManager output directory into:
-      [AppName]_Test/src/main/resources/
-      They are loaded at runtime via the classloader as classpath resources.
-    </where_to_place_mxml_files>
-  </recorded_messages>
-
-  <!-- ========================================
-       SECTION 4: JAVA TEST CLASS PATTERNS
-       ======================================== -->
-
-  <java_test_patterns>
-    <description>
-      All test classes use JUnit 5 (@Test, @AfterEach, @DisplayName) and the ACE
-      com.ibm.integration.test.v1 library. The core pattern is NodeSpy.evaluate().
-    </description>
-
-    <required_imports><![CDATA[
-import static com.ibm.integration.test.v1.Matchers.equalsMessage;
-import static com.ibm.integration.test.v1.Matchers.nodeCallCountIs;
-import static com.ibm.integration.test.v1.Matchers.terminalPropagateCountIs;
-import static org.hamcrest.MatcherAssert.assertThat;
-
-import java.io.InputStream;
-
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-
-import com.ibm.integration.test.v1.NodeSpy;
-import com.ibm.integration.test.v1.SpyObjectReference;
-import com.ibm.integration.test.v1.TestMessageAssembly;
-import com.ibm.integration.test.v1.TestSetup;
-import com.ibm.integration.test.v1.exception.TestException;
-    ]]></required_imports>
-
-    <mandatory_cleanup>
-      <description>
-        EVERY test class MUST have an @AfterEach method that calls TestSetup.restoreAllMocks().
-        This prevents mock state leaking between tests.
-      </description>
-      <code><![CDATA[
-@AfterEach
-public void cleanupTest() throws TestException {
-    TestSetup.restoreAllMocks();
-}
-      ]]></code>
-    </mandatory_cleanup>
-
-    <helper_method_load_assembly>
-      <description>
-        Always include this private helper for loading .mxml files from the classpath.
-        Use it in every test to load both input and expected assemblies.
-      </description>
-      <code><![CDATA[
-private TestMessageAssembly loadAssembly(String resourcePath) throws TestException {
-    TestMessageAssembly assembly = new TestMessageAssembly();
-    try {
-        InputStream stream = Thread.currentThread()
-                .getContextClassLoader()
-                .getResourceAsStream(resourcePath);
-        if (stream == null) {
-            throw new TestException("Cannot find recorded message: " + resourcePath);
-        }
-        assembly.buildFromRecordedMessageAssembly(stream);
-    } catch (Exception ex) {
-        throw new TestException("Failed to load recorded message: " + resourcePath, ex);
-    }
-    return assembly;
-}
-      ]]></code>
-    </helper_method_load_assembly>
-
-    <pattern name="node_test_from_recorded_messages">
-      <description>
-        Standard pattern for a node-level test using recorded .mxml files.
-        Replace placeholders:
-          [APP]       = application name (e.g. "WeatherAPI_App")
-          [FLOW]      = message flow name (e.g. "getCurrentWeather")
-          [NODE]      = node label as shown in the flow canvas (e.g. "Prepare Request")
-          [INPUT]     = resource path to the input .mxml (the checkpoint BEFORE this node)
-          [EXPECTED]  = resource path to the expected output .mxml (the checkpoint FROM this node)
-          [TERMINAL]  = output terminal name the node propagates to (e.g. "out", "failure", "out1")
-      </description>
-      <code><![CDATA[
-@Test
-@DisplayName("[FLOW] — [NODE] TC001 — [description] (recorded)")
-public void [flow]_[Node]_TC001() throws TestException {
-
-    // Spy on the node under test
-    SpyObjectReference nodeRef = new SpyObjectReference()
-            .application("[APP]")
-            .messageFlow("[FLOW]")
-            .node("[NODE]");
-
-    NodeSpy nodeSpy = new NodeSpy(nodeRef);
-
-    // Inject the recorded input checkpoint
-    TestMessageAssembly inputAssembly = loadAssembly("/[INPUT].mxml");
-
-    // Execute the node
-    nodeSpy.evaluate(inputAssembly, true, "in");
-
-    // Assert the node was called once
-    assertThat(nodeSpy, nodeCallCountIs(1));
-
-    // Assert it propagated via the expected terminal
-    assertThat(nodeSpy, terminalPropagateCountIs("[TERMINAL]", 1));
-
-    // Get the actual output and compare to the recorded expected output
-    TestMessageAssembly actualOutput   = nodeSpy.propagatedMessageAssembly("[TERMINAL]", 1);
-    TestMessageAssembly expectedOutput = loadAssembly("/[EXPECTED].mxml");
-
-    assertThat(actualOutput, equalsMessage(expectedOutput));
-}
-      ]]></code>
-    </pattern>
-
-    <pattern name="node_test_with_ignore_paths">
-      <description>
-        When the node makes outbound calls (e.g. HTTP Request node) or produces time-varying
-        output, use ignorePath() to exclude fields that legitimately differ from the recording.
-        Common fields to ignore for HTTP Request nodes:
-          /Message/BLOB/BLOB                            — response body (content changes over time)
-          /Message/HTTPResponseHeader/Date              — HTTP date header
-          /Message/HTTPResponseHeader/CDN-CachedAt      — CDN timestamp
-          /Message/HTTPResponseHeader/CDN-RequestId     — unique per request
-          /Message/HTTPResponseHeader/CDN-Cache         — cache hit/miss varies
-          /Message/HTTPResponseHeader/x-weatherapi-qpm-left — rate limit counter
-          /LocalEnvironment/WrittenDestination          — contains request timestamps
-      </description>
-      <code><![CDATA[
-assertThat(actualOutput, equalsMessage(expectedOutput)
-        .ignorePath("/Message/BLOB/BLOB", false)
-        .ignorePath("/Message/HTTPResponseHeader/Date", false)
-        .ignorePath("/Message/HTTPResponseHeader/CDN-CachedAt", false)
-        .ignorePath("/Message/HTTPResponseHeader/CDN-RequestId", false)
-        .ignorePath("/Message/HTTPResponseHeader/CDN-Cache", false)
-        .ignorePath("/Message/HTTPResponseHeader/x-weatherapi-qpm-left", false)
-        .ignorePath("/LocalEnvironment/WrittenDestination", true)
-);
-      ]]></code>
-      <ignorepath_syntax>
-        ignorePath(path, recursive)
-          path      = "/" separated path into the message tree
-          recursive = true  → ignore the entire subtree rooted at path
-          recursive = false → ignore only the leaf value at path
-      </ignorepath_syntax>
-    </pattern>
-
-    <pattern name="subflow_node_reference">
-      <description>
-        For nodes INSIDE a subflow, use .subflowNode() before .node() in the SpyObjectReference.
-      </description>
-      <code><![CDATA[
-SpyObjectReference nodeRef = new SpyObjectReference()
-        .application("[APP]")
-        .messageFlow("[FLOW]")
-        .subflowNode("[SubflowNodeLabel]")   // label of the subflow instance in the parent flow
-        .node("[NodeInsideSubflow]");        // label of the node inside the subflow
-      ]]></code>
-    </pattern>
-
-    <pattern name="terminal_assert_only">
-      <description>
-        When you only want to check that a node propagated to the correct terminal
-        (without comparing the full message tree), omit the equalsMessage assertion.
-        Useful for quick smoke tests or when the output is non-deterministic.
-      </description>
-      <code><![CDATA[
-nodeSpy.evaluate(inputAssembly, true, "in");
-assertThat(nodeSpy, nodeCallCountIs(1));
-assertThat(nodeSpy, terminalPropagateCountIs("out", 1));
-// No equalsMessage — just verifying routing behaviour
-      ]]></code>
-    </pattern>
-
-    <pattern name="mock_downstream_node">
-      <description>
-        When a node makes an outbound call you want to prevent (e.g. HTTP Request to a real backend),
-        use NodeSpy.setStopAtInputTerminal("in") on the downstream node to intercept the message
-        before it enters and executes that node. This makes the test fully offline / hermetic.
-      </description>
-      <code><![CDATA[
-// Spy on the node that should NOT fire (e.g. HTTP Request)
-SpyObjectReference httpRequestRef = new SpyObjectReference()
-        .application("[APP]")
-        .messageFlow("[FLOW]")
-        .node("HTTP Request");
-
-NodeSpy httpRequestSpy = new NodeSpy(httpRequestRef);
-
-// Stop BEFORE the HTTP Request node sends its message out
-httpRequestSpy.setStopAtInputTerminal("in");
-
-// Now spy on and drive the upstream node
-SpyObjectReference computeRef = new SpyObjectReference()
-        .application("[APP]")
-        .messageFlow("[FLOW]")
-        .node("Prepare Request");
-
-NodeSpy computeSpy = new NodeSpy(computeRef);
-computeSpy.propagate(loadAssembly("/[INPUT].mxml"), "out");
-
-// Assert the HTTP Request node received the correct message
-assertThat(httpRequestSpy, nodeCallCountIs(1));
-      ]]></code>
-    </pattern>
-  </java_test_patterns>
+  <!-- Sections 4 (java_test_patterns), 10 (nodestub_api), 15 (generated_vs_manual_tests)
+       have been moved to 5b_java_test_patterns.xml -->
 
   <!-- ========================================
        SECTION 5: STEP-BY-STEP WORKFLOW
@@ -677,7 +399,7 @@ assertThat(httpRequestSpy, nodeCallCountIs(1));
        Hand-writing .mxml files is inadvisable. The correct approach when a path
        has no recordings is to record more messages by configuring the scenario
        and invoking the flow with RecordedMessageManager enabled.
-       See Section 14 for understanding the .mxml structure and checkpoint format.
+       See 5a_recorded_messages.xml for understanding the .mxml structure and checkpoint format.
        ======================================== -->
 
   <!-- ========================================
@@ -709,30 +431,9 @@ assertThat(httpRequestSpy, nodeCallCountIs(1));
       </solution>
     </mistake>
 
-    <mistake>
-      <problem>Missing TestSetup.restoreAllMocks() in @AfterEach</problem>
-      <symptom>Tests pass individually but fail when run as a suite due to leaked mock state</symptom>
-      <solution>Always include the @AfterEach cleanup method in every test class</solution>
-    </mistake>
-
-    <mistake>
-      <problem>Wrong .mxml file pairing for node input/output</problem>
-      <symptom>equalsMessage assertion fails immediately — trees don't match at all</symptom>
-      <solution>
-        Re-read the checkpoint metadata: the SOURCE of the output checkpoint identifies
-        the node that produced it. The TARGET of the input checkpoint identifies the node
-        that receives it. Ensure both point to the same node label.
-      </solution>
-    </mistake>
-
-    <mistake>
-      <problem>Not ignoring time-varying fields for HTTP Request tests</problem>
-      <symptom>Test passes on the day of recording but fails the next day (timestamps differ)</symptom>
-      <solution>
-        Add ignorePath() for Date headers, CDN fields, BLOB content (if it contains live data),
-        and WrittenDestination timestamps. See Section 4 pattern "node_test_with_ignore_paths".
-      </solution>
-    </mistake>
+    <!-- Duplicate of 5b_java_test_patterns.xml mandatory_cleanup — see there -->
+    <!-- Duplicate of 5a_recorded_messages.xml common_failures/timestamp_mismatch — see there -->
+    <!-- Duplicate of 5a_recorded_messages.xml checkpoint_structure — see there -->
 
     <mistake>
       <problem>Node label mismatch in SpyObjectReference</problem>
@@ -744,114 +445,63 @@ assertThat(httpRequestSpy, nodeCallCountIs(1));
       </solution>
     </mistake>
 
-    <mistake>
-      <problem>buildFromRecordedMessageAssembly throws TestException on .mxml load</problem>
-      <symptom>TestException: failed to parse message assembly — or stream returns null</symptom>
-      <solution>
-        1. Verify the .mxml file is in src/main/resources/ and the resource name passed
-           to getResourceAsStream() matches the filename exactly (case-sensitive).
-        2. Verify the .mxml file is a genuine recording from RecordedMessageManager, not
-           a manually edited or constructed file. The iib: namespace schema is strict —
-           the root element requires iib:parser="GENERICROOT" and the message element
-           requires iib:injectable="true". Any structural deviation causes parse failures.
-        3. If the file was copied rather than recorded fresh, confirm it was not accidentally
-           modified. Compare it against the original in the RecordedMessages directory.
-      </solution>
-      <note>
-        If no recording exists for the path you need to test, the correct fix is to
-        record real messages for that scenario — not to write .mxml files by hand.
-      </note>
-    </mistake>
+    <!-- Duplicate of 5a_recorded_messages.xml common_failures — see there for full detail -->
   </common_mistakes>
 
   <!-- ========================================
-       SECTION 8: COMPLETE EXAMPLE
+       SECTION 8: COMPLETE EXAMPLE (checkpoint analysis only)
+       For the Java test class, see 5b_java_test_patterns.xml.
        ======================================== -->
 
   <complete_example>
     <description>
-      Complete example based on WeatherAPI_App with 3 recorded checkpoints for getCurrentWeather.
-      Recording: curl GET http://localhost:7800/weather/current?location=London
-      Files: 000071A0-6A4EAD36-00000001-{0,1,2}.mxml
+      WeatherAPI_App — 4 recorded sessions across 2 flows.
+      Real recording IDs (from WeatherAPI_App_RecordedMessages_Orig):
+
+        getCurrentWeather — session 1 (happy path, location=London):
+          00007494-6A511EA2-00000001-{0,1,2}.mxml
+
+        getCurrentWeather — session 2 (400 path, missing location param):
+          00007494-6A511F1F-00000002-{0,1}.mxml
+
+        getWeatherAlerts — session 1 (happy path):
+          000097C0-6A511EBA-00000001-{0,1,2}.mxml
+
+        getWeatherAlerts — session 2 (happy path, different location):
+          000097C0-6A511F30-00000002-{0,1,2}.mxml
+
+      For Java test class patterns, see 5b_java_test_patterns.xml.
     </description>
 
     <checkpoint_analysis><![CDATA[
--0.mxml  SOURCE=HTTP Input→out        TARGET=Prepare Request→in   (trigger message)
--1.mxml  SOURCE=Prepare Request→out   TARGET=HTTP Request→in      (ESQL output, URL built)
--2.mxml  SOURCE=HTTP Request→out      TARGET=HTTP Reply→in        (backend response)
+=== getCurrentWeather — session 1 (happy path) ===
+-0.mxml  SOURCE=HTTP Input→out        TARGET=Prepare Request→in   (HTTP GET with ?location=London)
+-1.mxml  SOURCE=Prepare Request→out   TARGET=HTTP Request→in      (URL built by ESQL)
+-2.mxml  SOURCE=HTTP Request→out      TARGET=HTTP Reply→in        (live weather API response)
 
-Tests to generate:
-  TC for "Prepare Request" : input=-0, expected=-1, terminal=out  (pure ESQL, no live calls)
-  TC for "HTTP Request"    : input=-1, expected=-2, terminal=out  (live backend call, use ignorePath)
+Tests:
+  "Prepare Request" TC001 (happy): input=-0  expected=-1  terminal=out  (pure ESQL)
+  "HTTP Request"    TC001 (happy): input=-1  expected=-2  terminal=out  (live call — use ignorePath)
+
+=== getCurrentWeather — session 2 (400 missing location) ===
+-0.mxml  SOURCE=HTTP Input→out        TARGET=Prepare Request→in   (HTTP GET with no location param)
+-1.mxml  SOURCE=Prepare Request→failure  TARGET=HTTP Reply→in     (400 JSON error response)
+
+Tests:
+  "Prepare Request" TC002 (missing location): input=-0  expected=-1  terminal=failure
+
+=== getWeatherAlerts — sessions 1 & 2 (both happy path) ===
+-0.mxml  SOURCE=HTTP Input→out        TARGET=Prepare Request→in
+-1.mxml  SOURCE=Prepare Request→out   TARGET=HTTP Request→in
+-2.mxml  SOURCE=HTTP Request→out      TARGET=HTTP Reply→in
+
+Tests:
+  "Prepare Request" TC001 (happy): input=-0  expected=-1  terminal=out
+  "HTTP Request"    TC001 (happy): input=-1  expected=-2  terminal=out  (live call — use ignorePath)
+
+Coverage gap: NO recording of getWeatherAlerts 400 path (missing location).
+To fill: record a request to /weather/alerts with no location param.
     ]]></checkpoint_analysis>
-
-    <java_class><![CDATA[
-package com.weather.api.test;
-
-import static com.ibm.integration.test.v1.Matchers.equalsMessage;
-import static com.ibm.integration.test.v1.Matchers.nodeCallCountIs;
-import static com.ibm.integration.test.v1.Matchers.terminalPropagateCountIs;
-import static org.hamcrest.MatcherAssert.assertThat;
-import java.io.InputStream;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-import com.ibm.integration.test.v1.NodeSpy;
-import com.ibm.integration.test.v1.SpyObjectReference;
-import com.ibm.integration.test.v1.TestMessageAssembly;
-import com.ibm.integration.test.v1.TestSetup;
-import com.ibm.integration.test.v1.exception.TestException;
-
-public class WeatherAPITest {
-
-    private static final String APP  = "WeatherAPI_App";
-    private static final String FLOW = "getCurrentWeather";
-
-    @AfterEach
-    public void cleanupTest() throws TestException {
-        TestSetup.restoreAllMocks();
-    }
-
-    private TestMessageAssembly loadAssembly(String path) throws TestException {
-        TestMessageAssembly a = new TestMessageAssembly();
-        try {
-            InputStream s = Thread.currentThread().getContextClassLoader().getResourceAsStream(path);
-            if (s == null) throw new TestException("Cannot find: " + path);
-            a.buildFromRecordedMessageAssembly(s);
-        } catch (Exception ex) { throw new TestException("Failed to load: " + path, ex); }
-        return a;
-    }
-
-    @Test
-    @DisplayName("getCurrentWeather — Prepare Request TC001 — location=London builds backend URL (recorded)")
-    public void getCurrentWeather_PrepareRequest_TC001() throws TestException {
-        NodeSpy nodeSpy = new NodeSpy(new SpyObjectReference().application(APP).messageFlow(FLOW).node("Prepare Request"));
-        nodeSpy.evaluate(loadAssembly("/000071A0-6A4EAD36-00000001-0.mxml"), true, "in");
-        assertThat(nodeSpy, nodeCallCountIs(1));
-        assertThat(nodeSpy, terminalPropagateCountIs("out", 1));
-        assertThat(nodeSpy.propagatedMessageAssembly("out", 1),
-                equalsMessage(loadAssembly("/000071A0-6A4EAD36-00000001-1.mxml")));
-    }
-
-    @Test
-    @DisplayName("getCurrentWeather — HTTP Request TC001 — calls backend, returns London weather (recorded)")
-    public void getCurrentWeather_HTTPRequest_TC001() throws TestException {
-        NodeSpy nodeSpy = new NodeSpy(new SpyObjectReference().application(APP).messageFlow(FLOW).node("HTTP Request"));
-        nodeSpy.evaluate(loadAssembly("/000071A0-6A4EAD36-00000001-1.mxml"), true, "in");
-        assertThat(nodeSpy, nodeCallCountIs(1));
-        assertThat(nodeSpy, terminalPropagateCountIs("out", 1));
-        assertThat(nodeSpy.propagatedMessageAssembly("out", 1),
-                equalsMessage(loadAssembly("/000071A0-6A4EAD36-00000001-2.mxml"))
-                    .ignorePath("/Message/BLOB/BLOB", false)
-                    .ignorePath("/Message/HTTPResponseHeader/Date", false)
-                    .ignorePath("/Message/HTTPResponseHeader/CDN-CachedAt", false)
-                    .ignorePath("/Message/HTTPResponseHeader/CDN-RequestId", false)
-                    .ignorePath("/Message/HTTPResponseHeader/CDN-Cache", false)
-                    .ignorePath("/Message/HTTPResponseHeader/x-weatherapi-qpm-left", false)
-                    .ignorePath("/LocalEnvironment/WrittenDestination", true));
-    }
-}
-    ]]></java_class>
   </complete_example>
 
   <!-- ========================================
@@ -964,25 +614,7 @@ ibmint generate tests \
   --output-test-project ../tests/Flow1Tests \
   --java-class com.my.bar.Flow1Tests
       ]]></examples>
-      <what_is_generated><![CDATA[
-GenTest_0_AppName/
-├── .project                              ← Eclipse project with ACE test natures
-├── testproject.descriptor                ← References the application under test
-├── .classpath                            ← ACE test framework JARs on classpath
-├── .settings/
-│   └── org.eclipse.core.resources.prefs
-├── build.gradle                          ← Gradle build descriptor
-├── settings.gradle
-└── src/main/
-    ├── java/[package]/[ClassName].java   ← Generated JUnit 5 test class
-    └── resources/
-        └── *.mxml                        ← Copied from recorded messages
-
-The generated Java class contains:
-  - One @Test method per node transition per recorded session
-  - NodeSpy.evaluate() + equalsMessage() assertions for each transition
-  - @AfterEach TestSetup.restoreAllMocks() cleanup
-      ]]></what_is_generated>
+      <!-- what_is_generated: see Workflow Step 4 <what_is_generated> above — identical content removed -->
       <notes>
         <note>
           The generated project uses Gradle (build.gradle), not Maven. Gradle 8.2.1+
@@ -1077,166 +709,6 @@ IntegrationServer \
       </important_notes>
     </command>
   </ibmint_test_commands>
-
-  <!-- ========================================
-       SECTION 10: NodeStub API (WHOLE-FLOW TESTS)
-       ======================================== -->
-
-  <nodestub_api>
-    <description>
-      NodeStub is an ACE Integration Test API that prevents a node from executing its
-      normal logic and from propagating messages to downstream nodes. It is used alongside
-      NodeSpy for whole-flow integration tests to:
-      - Prevent real outbound calls (HTTP requests, MQ writes) during testing
-      - Isolate specific paths through the flow
-      - Mock external service responses
-
-      NodeSpy (used in node-level unit tests) observes a node and lets it run.
-      NodeStub prevents a node from running altogether, acting as a stop point.
-    </description>
-
-    <required_imports><![CDATA[
-import com.ibm.integration.test.v1.NodeStub;
-import com.ibm.integration.test.v1.NodeSpy;
-import com.ibm.integration.test.v1.SpyObjectReference;
-import com.ibm.integration.test.v1.TestMessageAssembly;
-import com.ibm.integration.test.v1.TestSetup;
-import com.ibm.integration.test.v1.exception.TestException;
-    ]]></required_imports>
-
-    <pattern name="whole_flow_with_stubs">
-      <description>
-        Standard pattern for a whole-flow integration test that:
-        1. Uses NodeSpy on the INPUT node to inject a recorded message (replays real input)
-        2. Places NodeStubs on OUTPUT nodes to intercept messages before they reach queues/services
-        3. Asserts that the expected messages arrived at the output stubs
-        This tests the ENTIRE flow end-to-end without triggering real external systems.
-      </description>
-      <code><![CDATA[
-@Test
-@DisplayName("WholeFlow — Normal path — input arrives at expected output nodes")
-public void wholeFlow_FlowOrder_Test() throws TestException {
-
-    // 1. Spy on the INPUT node to inject the recorded message
-    SpyObjectReference inputNodeRef = new SpyObjectReference()
-            .application("Common_Realtime_Workflow")
-            .messageFlow("Common_Realtime_Workflow_MF")
-            .node("IIBHUB.COMMONREALTIME.INPUT");   // label of the MQ Input node
-
-    NodeSpy inputNodeSpy = new NodeSpy(inputNodeRef);
-
-    // 2. Stub OUTPUT nodes to prevent real MQ writes
-    SpyObjectReference salesforceOutputRef = new SpyObjectReference()
-            .application("Common_Realtime_Workflow")
-            .messageFlow("Common_Realtime_Workflow_MF")
-            .node("IIBHUB.SALESFORCE.INPUT");       // label of the MQ Output node
-
-    NodeStub salesforceStub = new NodeStub(salesforceOutputRef);
-    salesforceStub.setStopAtInputTerminal("in");    // intercept before the node fires
-
-    SpyObjectReference dbReportingOutputRef = new SpyObjectReference()
-            .application("Common_Realtime_Workflow")
-            .messageFlow("Common_Realtime_Workflow_MF")
-            .node("IIBHUB.DBREPORTING.INPUT");
-
-    NodeStub dbReportingStub = new NodeStub(dbReportingOutputRef);
-    dbReportingStub.setStopAtInputTerminal("in");
-
-    // 3. Stub the HTTP Request node inside the subflow to mock the external service
-    SpyObjectReference httpRequestRef = new SpyObjectReference()
-            .application("Common_Realtime_Workflow")
-            .messageFlow("Common_Realtime_Workflow_MF")
-            .subflowNode("CommonMemberPreference")  // subflow instance label
-            .node("MemInqHTTP Request");             // node inside the subflow
-
-    NodeStub httpRequestStub = new NodeStub(httpRequestRef);
-    // Provide a recorded response to feed back into the flow
-    TestMessageAssembly mockResponse = loadAssembly("/recorded_http_response.mxml");
-    httpRequestStub.setReturnValue(mockResponse, "out");   // replay recorded response
-
-    // 4. Inject the input message
-    TestMessageAssembly inputMsg = loadAssembly("/IIBHUB.COMMONREALTIME.INPUT-0.mxml");
-    inputNodeSpy.evaluate(inputMsg, true, "out");          // drive from input node
-
-    // 5. Assert messages arrived at expected output stubs
-    assertThat(salesforceStub, nodeCallCountIs(1));
-    assertThat(dbReportingStub, nodeCallCountIs(1));
-
-    // 6. Optionally compare content against recorded expected assemblies
-    assertThat(salesforceStub.propagatedMessageAssembly("in", 1),
-            equalsMessage(loadAssembly("/IIBHUB.SALESFORCE.INPUT-expected.mxml")));
-}
-      ]]></code>
-    </pattern>
-
-    <pattern name="error_path_whole_flow">
-      <description>
-        Testing the error/catch path in a whole-flow test.
-        Inject a message that triggers the error path and assert the error output.
-      </description>
-      <code><![CDATA[
-@Test
-@DisplayName("WholeFlow — Error path — catch terminal routes to error output")
-public void wholeFlow_LogError_Test() throws TestException {
-
-    // Stub the error output node
-    SpyObjectReference errorReplayRef = new SpyObjectReference()
-            .application("Common_Realtime_Workflow")
-            .messageFlow("Common_Realtime_Workflow_MF")
-            .node("COMMON.ERRORREPLAY");
-
-    NodeStub errorReplayStub = new NodeStub(errorReplayRef);
-    errorReplayStub.setStopAtInputTerminal("in");
-
-    // Spy on the input node
-    SpyObjectReference inputRef = new SpyObjectReference()
-            .application("Common_Realtime_Workflow")
-            .messageFlow("Common_Realtime_Workflow_MF")
-            .node("IIBHUB.COMMONREALTIME.INPUT");
-
-    NodeSpy inputSpy = new NodeSpy(inputRef);
-
-    // Inject a recorded message that triggers the error scenario
-    TestMessageAssembly errorInput = loadAssembly("/error-scenario-input.mxml");
-    inputSpy.evaluate(errorInput, true, "out");
-
-    // Verify the error output was triggered
-    assertThat(errorReplayStub, nodeCallCountIs(1));
-}
-      ]]></code>
-    </pattern>
-
-    <nodestub_vs_nodespy>
-      <description>Key differences between NodeStub and NodeSpy</description>
-      <table>
-        <row>
-          <aspect>Purpose</aspect>
-          <nodespy>Observe a node executing normally</nodespy>
-          <nodestub>Prevent a node from executing at all</nodestub>
-        </row>
-        <row>
-          <aspect>Node execution</aspect>
-          <nodespy>Node runs its full logic</nodespy>
-          <nodestub>Node logic is skipped</nodestub>
-        </row>
-        <row>
-          <aspect>Downstream propagation</aspect>
-          <nodespy>Node propagates normally</nodespy>
-          <nodestub>Propagation is stopped</nodestub>
-        </row>
-        <row>
-          <aspect>setReturnValue</aspect>
-          <nodespy>Not available</nodespy>
-          <nodestub>Can feed a mock response back into the flow</nodestub>
-        </row>
-        <row>
-          <aspect>Use case</aspect>
-          <nodespy>Unit test: test what THIS node produces</nodespy>
-          <nodestub>Integration test: mock external services, stop output nodes</nodestub>
-        </row>
-      </table>
-    </nodestub_vs_nodespy>
-  </nodestub_api>
 
   <!-- ========================================
        SECTION 11: ENTERPRISE TESTING LIFECYCLE (5 STEPS)
@@ -1496,273 +968,8 @@ done
   <!-- Section 12 (naming_conventions) has been moved to
        3a_test_project_structure_and_enterprise_patterns.xml -->
 
-  <!-- ========================================
-       SECTION 13: COMMON FAILURE POINTS AND FIXES
-       ======================================== -->
-
-  <common_failures>
-    <failure name="timestamp_mismatch">
-      <description>
-        The most common JUnit test failure in auto-generated tests. Recorded messages
-        capture timestamps at recording time; when tests re-execute, current system time
-        differs, causing field comparison failures.
-      </description>
-      <example_error><![CDATA[
-java.lang.AssertionError:
-Expected: TestMessageAssemblies should have matching message trees.
-     but: Expected value '2025-10-01 15:03:20.104670'
-          but was '2025-10-28 13:49:27.878221'
-          (path: /Message/XMLNSC/db_record_data/createdDate)
-      ]]></example_error>
-      <fix>
-        Use ignorePath() to exclude the time-varying fields from comparison.
-        Navigate to the line referenced in the error (e.g., tests.java:549) and add
-        ignorePath() calls for the affected paths.
-      </fix>
-      <before><![CDATA[
-assertThat(actualAssembly, equalsMessage(expectedAssembly));
-      ]]></before>
-      <after><![CDATA[
-assertThat(actualAssembly, equalsMessage(expectedAssembly)
-        .ignorePath("/Message/XMLNSC/db_record_data/createdDate", false)
-        .ignorePath("/Message/XMLNSC/db_record_data/sfModifiedDate", false)
-);
-      ]]></after>
-      <common_paths_to_ignore>
-        <path>/Message/XMLNSC/**/createdDate</path>
-        <path>/Message/XMLNSC/**/modifiedDate</path>
-        <path>/Message/XMLNSC/**/timestamp</path>
-        <path>/Message/HTTPResponseHeader/Date</path>
-        <path>/Message/HTTPResponseHeader/CDN-CachedAt</path>
-        <path>/Message/HTTPResponseHeader/CDN-RequestId</path>
-        <path>/Message/HTTPResponseHeader/CDN-Cache</path>
-        <path>/Message/HTTPResponseHeader/x-weatherapi-qpm-left</path>
-        <path>/LocalEnvironment/WrittenDestination</path>
-      </common_paths_to_ignore>
-    </failure>
-
-    <failure name="propagation_count_mismatch">
-      <description>
-        Auto-generated tests assume all node propagations happen simultaneously and
-        independently. In real flows with sequential propagation patterns (Node A → Node B
-        waits for Node C to finish before Node A → Node D), the generated test may expect
-        a propagation that has not occurred yet.
-      </description>
-      <example_pattern>
-        Node A propagates out → Node B → Node C (finishes) → returns to Node A → Node A
-        propagates out1 → Node D. The generated test may expect BOTH Node B and Node D
-        to be called simultaneously, failing with propagation count = 0 on Node D.
-      </example_pattern>
-      <example_error><![CDATA[
-java.lang.AssertionError:
-Expected: Terminal:"out" to have propagate count:1
-     but: Node "Store Input Message" Terminal:"out" has propagate count:0
-      ]]></example_error>
-      <fix_option_1>
-        Modify the generated test to remove or adjust the propagation count assertion for
-        the terminal that fires after the sequential execution completes.
-      </fix_option_1>
-      <fix_option_2>
-        Temporarily disable the failing test with @Disabled until it can be rewritten as
-        a whole-flow integration test (Section 10).
-        <code><![CDATA[
-@Disabled("Propagation count mismatch due to sequential node execution — rewrite as whole-flow test")
-@Test
-public void OndotWorkflow_OndotWorkflow_MF_Store_Input_Message_TestCase_001() throws TestException {
-    // existing test logic
-}
-        ]]></code>
-      </fix_option_2>
-      <recommendation>
-        Propagation count mismatches usually indicate that auto-generated tests are not the
-        right approach for that node. Write a whole-flow integration test instead (Section 10)
-        that tests the complete message propagation lifecycle.
-      </recommendation>
-    </failure>
-
-    <failure name="ssl_handshake_exception">
-      <description>
-        Tests run at the Integration Server level (NOT the Integration Node level).
-        SSL/TLS configurations defined in node.conf.yaml (truststore, keystore, certificates)
-        are NOT applied during test execution. This causes SSLHandshakeException when tests
-        attempt HTTPS connections.
-      </description>
-      <example_error><![CDATA[
-TestException(BIP3165) BIP3165E: An error occurred whilst performing an SSL socket operation.
-Operation: connect.
-Error Text: javax.net.ssl.SSLHandshakeException: No X509TrustManager implementation available.
-      ]]></example_error>
-      <fix>
-        Copy the required security configuration entries from node.conf.yaml into the
-        execution group's overrides/server.conf.yaml:
-        <code><![CDATA[
-# In servers/<execution_group_name>/overrides/server.conf.yaml
-BrokerRegistry:
-  brokerTruststoreFile: '/path/to/truststore.jks'
-        ]]></code>
-      </fix>
-      <rule priority="critical">
-        Always place security configuration in server.conf.yaml, not node.conf.yaml,
-        when it is needed for test execution.
-      </rule>
-    </failure>
-
-    <failure name="generated_tests_brittle">
-      <description>
-        Auto-generated tests are tightly coupled to the recorded messages and are brittle —
-        any change to the application may require regenerating and reimporting tests.
-      </description>
-      <symptoms>
-        <symptom>Tests that passed yesterday fail after a minor code change</symptom>
-        <symptom>Large number of ignorePath() calls needed to maintain tests</symptom>
-        <symptom>Tests difficult to understand without reading both .mxml files and generated Java</symptom>
-      </symptoms>
-      <recommendation>
-        Use generated tests as a starting point and for regression testing during migration.
-        For long-lived test suites, invest in manually written whole-flow integration tests
-        (Section 10) that are more resilient to application changes.
-      </recommendation>
-    </failure>
-  </common_failures>
-
-  <!-- ========================================
-       SECTION 14: UNDERSTANDING RECORDED MESSAGES
-       ======================================== -->
-
-  <understanding_recorded_messages>
-    <description>
-      A recorded message (.mxml file) represents a snapshot of a message assembly at a
-      specific point in a running message flow. Each file encodes four internal trees:
-      - Message tree: headers and payload
-      - Environment tree: Environment variables set by nodes
-      - Local environment tree: LocalEnvironment (HTTP, WrittenDestination, etc.)
-      - Exception list tree: any exceptions at this point
-
-      An additional checkpoint element captures metadata about WHERE in the flow
-      this snapshot was taken.
-    </description>
-
-    <checkpoint_metadata>
-      <field name="messageId">Unique identifier grouping all checkpoints for one message invocation</field>
-      <field name="propagationCount">Sequential position in the flow (0 = first node output)</field>
-      <field name="nodeCallDepth">Depth of the node call stack when captured</field>
-      <field name="timestamp">Exact time the checkpoint was recorded</field>
-      <field name="source">
-        The node that EMITTED the message:
-        - name: node label
-        - type: node type (ComIbmComputeNode, InputNode, etc.)
-        - terminal: which terminal fired (out, failure, out1, etc.)
-        - application, messageFlow, subflow path
-        - inputNode: TRUE if this is an input-type node
-      </field>
-      <field name="target">
-        The node that will RECEIVE the message:
-        - same fields as source
-      </field>
-    </checkpoint_metadata>
-
-    <reading_checkpoints>
-      <description>
-        To determine which test a checkpoint supports:
-        - The SOURCE tells you which node PRODUCED the message (the node under test's output)
-        - The TARGET tells you which node will RECEIVE it (which test this feeds into as input)
-        - For node N: use checkpoint[N] as the expected OUTPUT, checkpoint[N-1] as the INPUT
-      </description>
-    </reading_checkpoints>
-
-    <bash_script_for_source_target>
-      <description>
-        With many .mxml files, manually reading source/target is tedious.
-        Use this bash script with xmllint to quickly parse all files:
-      </description>
-      <code><![CDATA[
-#!/bin/bash
-# parse_mxml.sh — print source and target node for each .mxml file
-# Requires: xmllint (install: sudo snap install libxml2)
-
-for f in *.mxml; do
-  echo "File: $f"
-  src=$(xmllint --xpath \
-    "string(//*[local-name()='checkpoint']/*[local-name()='source']/*[local-name()='name'])" \
-    "$f" 2>/dev/null)
-  tgt=$(xmllint --xpath \
-    "string(//*[local-name()='checkpoint']/*[local-name()='target']/*[local-name()='name'])" \
-    "$f" 2>/dev/null)
-  echo "  Source: $src"
-  echo "  Target: $tgt"
-  echo
-done
-      ]]></code>
-      <installation>
-        Linux: sudo apt-get install libxml2-utils
-        Snap:  sudo snap install libxml2
-        Windows: use xmllint from the libxml2 Windows binary package
-      </installation>
-    </bash_script_for_source_target>
-
-    <mapping_table_example>
-      <description>
-        Example output from parse_mxml.sh for getCurrentWeather flow:
-      </description>
-      <table><![CDATA[
-File: 000071A0-6A4EAD36-00000001-0.mxml
-  Source: HTTP Input
-  Target: Prepare Request
-
-File: 000071A0-6A4EAD36-00000001-1.mxml
-  Source: Prepare Request
-  Target: HTTP Request
-
-File: 000071A0-6A4EAD36-00000001-2.mxml
-  Source: HTTP Request
-  Target: HTTP Reply
-
-Therefore:
-  Test "Prepare Request": input=*-0.mxml  expected=*-1.mxml  terminal=out
-  Test "HTTP Request":    input=*-1.mxml  expected=*-2.mxml  terminal=out  (use ignorePath for live response)
-      ]]></table>
-    </mapping_table_example>
-  </understanding_recorded_messages>
-
-  <!-- ========================================
-       SECTION 15: GENERATED vs MANUAL TESTS
-       ======================================== -->
-
-  <generated_vs_manual_tests>
-    <comparison>
-      <aspect name="Effort to create">
-        <generated>Low — ibmint generate tests produces all test cases automatically</generated>
-        <manual>High — requires understanding the flow, writing Java, choosing assertions</manual>
-      </aspect>
-      <aspect name="Test coverage">
-        <generated>Node-by-node: each node transition becomes a test case</generated>
-        <manual>Can test complete end-to-end scenarios with multiple assertions</manual>
-      </aspect>
-      <aspect name="Brittleness">
-        <generated>High — tightly coupled to recorded messages; any flow change may break tests</generated>
-        <manual>Lower — tests are written against the intent of the flow, not exact byte values</manual>
-      </aspect>
-      <aspect name="Sequential propagation handling">
-        <generated>Poor — assumes parallel propagation, fails for sequential patterns</generated>
-        <manual>Good — can be written to match actual flow execution order</manual>
-      </aspect>
-      <aspect name="Maintenance">
-        <generated>Difficult — modifying generated tests requires re-understanding recorded data</generated>
-        <manual>Easier — test intent is self-documenting in Java method names and comments</manual>
-      </aspect>
-      <aspect name="Recommended use">
-        <generated>Migration testing (v12 → v13) and quick regression baseline</generated>
-        <manual>Long-lived test suites, complex flows, pipelines requiring stability</manual>
-      </aspect>
-    </comparison>
-
-    <recommendation>
-      Use generated tests to rapidly establish a regression baseline during migration projects.
-      Invest in manual whole-flow integration tests (NodeSpy + NodeStub) for flows that will
-      be actively maintained and evolved. The two approaches complement each other:
-      generated tests catch regressions; manual tests document business requirements.
-    </recommendation>
-  </generated_vs_manual_tests>
+  <!-- Sections 13+14 (common_failures, understanding_recorded_messages) moved to 5a_recorded_messages.xml -->
+  <!-- Sections 10+15 (nodestub_api, generated_vs_manual_tests) moved to 5b_java_test_patterns.xml -->
 
   <!-- Section 16 (jar_precedence) has been moved to
        3a_test_project_structure_and_enterprise_patterns.xml -->
