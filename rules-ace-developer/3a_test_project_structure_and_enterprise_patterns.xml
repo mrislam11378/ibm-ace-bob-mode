@@ -10,17 +10,9 @@
        ======================================== -->
 
   <when_to_create>
-    <description>
-      Create an ACE Test Project whenever:
-      - A new Application project has been created with message flows
-      - The user asks to "generate tests", "create a test project", or "write unit tests"
-      - Recorded messages (.mxml files) are available from the RecordedMessageManager
-      - The user wants to verify node-level behaviour without running the full flow end-to-end
-    </description>
-    <naming_convention>
-      Name the test project [AppName]_GeneratedTests.
-      Example: WeatherAPI_App → WeatherAPI_App_GeneratedTests
-    </naming_convention>
+    Create an ACE Test Project whenever a user asks to "generate tests", "create a test project",
+    or "write unit tests", or when .mxml recorded messages are available.
+    Naming: [AppName]_GeneratedTests — see naming_conventions below.
   </when_to_create>
 
   <!-- ========================================
@@ -300,32 +292,16 @@ rootProject.name = '[AppName]_GeneratedTests'
        ======================================== -->
 
   <naming_conventions>
-    <description>
-      All generated test projects use the [AppName]_GeneratedTests naming pattern.
-      This is consistent, simple, and makes automation (scripts, glob patterns) reliable.
-    </description>
-
     <test_project_naming>
-      <pattern>&lt;ApplicationName&gt;_GeneratedTests</pattern>
-      <description>
-        Use the application project name followed by _GeneratedTests.
-        This is the single naming convention for all ibmint-generated test projects.
-      </description>
+      <pattern>[AppName]_GeneratedTests</pattern>
       <examples>
         <example>WeatherAPI_App → WeatherAPI_App_GeneratedTests</example>
-        <example>OndotWorkflow → OndotWorkflow_GeneratedTests</example>
-        <example>Common_Realtime_Workflow → Common_Realtime_Workflow_GeneratedTests</example>
+        <example>OrderProcessing_App → OrderProcessing_App_GeneratedTests</example>
+        <example>FileTransfer_App → FileTransfer_App_GeneratedTests</example>
       </examples>
-      <alternative>
-        If you record additional scenarios and regenerate, update the existing
-        [AppName]_GeneratedTests project in place rather than creating a new one.
-      </alternative>
+      <note>Update the existing project in place when re-recording; do not create a second project.</note>
+      <note>BAR file name matches the project name: WeatherAPI_App_GeneratedTests.bar</note>
     </test_project_naming>
-
-    <bar_file_naming>
-      <description>BAR files for test projects follow the same pattern as the project name</description>
-      <example>WeatherAPI_App_GeneratedTests.bar</example>
-    </bar_file_naming>
   </naming_conventions>
 
   <!-- ========================================

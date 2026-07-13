@@ -88,28 +88,19 @@
     <step number="1">
       <title>Identify the Application under test</title>
       <description>
-        Note the exact application project name. The test project name follows the convention
-        [AppName]_GeneratedTests (e.g. WeatherAPI_App_GeneratedTests). See naming_conventions section.
+        Note the exact application project name and confirm recorded messages exist.
+        Naming convention: [AppName]_GeneratedTests — see 3a_test_project_structure_and_enterprise_patterns.xml.
       </description>
     </step>
 
     <step number="2">
       <title>Locate recorded messages</title>
       <description>
-        Check whether .mxml recorded messages exist. Look in:
-        - Any directory configured in RecordedMessageManager.recordedMessagePath
-        - Subdirectory structure is: [recordedMessagePath]/[AppName]/[FlowName]/[messageId]-[n].mxml
-
-        If recorded messages exist: use them (preferred — real runtime data).
-        If NOT: do NOT attempt to write .mxml files by hand. Record real messages by
-        enabling RecordedMessageManager in server.conf.yaml and invoking the flow.
-        Hand-writing .mxml files is inadvisable — the iib: namespace schema is complex
-        and hand-crafted files are fragile and hard to maintain.
-
-        ibmint generate tests searches ALL subdirectories of --recorded-messages recursively.
-        You can pass any level — a per-flow subdir, the app-level dir, or any parent.
-        The IBM docs primary example uses a per-flow directory (--recorded-messages flow1).
-        Pass the app-level directory to generate tests covering all flows in one go.
+        Recordings are stored under: [recordedMessagePath]/[AppName]/[FlowName]/[messageId]-[n].mxml
+        If recordings exist, use them. If NOT, enable RecordedMessageManager in server.conf.yaml
+        and invoke the flow — do NOT hand-write .mxml files (iib: namespace is complex and fragile).
+        ibmint generate tests searches --recorded-messages recursively; pass any level
+        (flow-level for one flow, app-level for all flows).
       </description>
     </step>
 
@@ -285,21 +276,9 @@
             --java-class com.org.app.test.AppTest
         </linux_aix>
       </execution_commands>
+      <!-- Project layout produced by ibmint generate tests matches the template in
+           3a_test_project_structure_and_enterprise_patterns.xml exactly. -->
       <what_is_generated>
-        ibmint generate tests creates a Gradle-based project:
-          AppName_GeneratedTests/
-          ├── .project                              ← Eclipse project with ACE test natures
-          ├── testproject.descriptor                ← References the application under test
-          ├── .classpath                            ← ACE test framework JARs on classpath
-          ├── .settings/
-          │   └── org.eclipse.core.resources.prefs
-          ├── build.gradle                          ← Gradle build descriptor (NOT pom.xml)
-          ├── settings.gradle
-          └── src/main/
-              ├── java/[package]/[ClassName].java   ← Generated JUnit 5 test class
-              └── resources/
-                  └── *.mxml                        ← Copied from recorded messages
-
         The generated Java class contains:
           - One @Test method per node transition per recorded session
           - NodeSpy.evaluate() calls with the correct -0, -1, -2 checkpoint files
@@ -380,27 +359,11 @@
       <description>
         Use this step ONLY when ibmint generate tests is unavailable (ACE below v12.0.8)
         or when no recorded messages exist. If you used Step 4 successfully, skip this step.
+        Use the file templates in 3a_test_project_structure_and_enterprise_patterns.xml to
+        create all required files, then write the Java test class using patterns in 5b_java_test_patterns.xml.
       </description>
-      <actions>
-        <action>Create [AppName]_GeneratedTests/.project (use ACE toolkit natures — see project_structure section)</action>
-        <action>Create [AppName]_GeneratedTests/testproject.descriptor (reference the Application)</action>
-        <action>Create [AppName]_GeneratedTests/.classpath</action>
-        <action>Create [AppName]_GeneratedTests/.settings/org.eclipse.core.resources.prefs</action>
-        <action>Create [AppName]_GeneratedTests/build.gradle (replace [AppName] in rootProject.name)</action>
-        <action>Create [AppName]_GeneratedTests/settings.gradle</action>
-        <action>Copy all .mxml files to [AppName]_GeneratedTests/src/main/resources/</action>
-        <action>Write the Java test class manually using patterns from Section 4</action>
-      </actions>
     </step>
   </workflow>
-
-  <!-- ========================================
-       SECTION 6 (REMOVED): Hand-crafted .mxml files
-       Hand-writing .mxml files is inadvisable. The correct approach when a path
-       has no recordings is to record more messages by configuring the scenario
-       and invoking the flow with RecordedMessageManager enabled.
-       See 5a_recorded_messages.xml for understanding the .mxml structure and checkpoint format.
-       ======================================== -->
 
   <!-- ========================================
        SECTION 7: COMMON MISTAKES
@@ -414,95 +377,24 @@
         This happens because the Buildship (Eclipse Gradle) plugin is not installed in the ACE Toolkit.
       </symptom>
       <solution>
-        Use ALL four ACE Toolkit natures in the .project file:
-          com.ibm.etools.msgbroker.tooling.testProjectNature
-          org.eclipse.jdt.core.javanature
-          com.ibm.etools.mft.jcn.jcnnature
-          com.ibm.etools.mft.bar.ext.barnature
-        With the full builder chain starting with:
-          org.eclipse.jdt.core.javabuilder (NOT mft.java.builder.javabuilder)
-          com.ibm.etools.mft.applib.mbprojectbuilder
-          ... (14 builders total — see the .project template in project_structure section)
-
-        Do NOT include org.eclipse.buildship.core.gradleprojectnature or
-        org.eclipse.buildship.core.gradleprojectbuilder in the .project file.
-        The build.gradle and settings.gradle files can still exist for command-line
-        Gradle builds — only the .project natures/builders need to be ACE-only.
+        Use ALL four ACE Toolkit natures and the full builder chain from the .project template
+        in 3a_test_project_structure_and_enterprise_patterns.xml.
+        Do NOT include org.eclipse.buildship.core.gradleprojectnature — the build.gradle file
+        can still exist for command-line Gradle builds without it.
       </solution>
     </mistake>
-
-    <!-- Duplicate of 5b_java_test_patterns.xml mandatory_cleanup — see there -->
-    <!-- Duplicate of 5a_recorded_messages.xml common_failures/timestamp_mismatch — see there -->
-    <!-- Duplicate of 5a_recorded_messages.xml checkpoint_structure — see there -->
 
     <mistake>
       <problem>Node label mismatch in SpyObjectReference</problem>
       <symptom>TestException at runtime: node not found</symptom>
       <solution>
-        The node label in .node("...") must exactly match the translation string in the .msgflow
-        file (the string="..." attribute on the translation element).
-        Example: string="Prepare Request" → .node("Prepare Request")
+        The label in .node("...") must exactly match the translation string in the .msgflow
+        (the string="..." attribute). Example: string="Prepare Request" → .node("Prepare Request")
       </solution>
     </mistake>
 
-    <!-- Duplicate of 5a_recorded_messages.xml common_failures — see there for full detail -->
+    <!-- Other common failures (timestamp mismatch, propagation count, SSL) are in 5a_recorded_messages.xml -->
   </common_mistakes>
-
-  <!-- ========================================
-       SECTION 8: COMPLETE EXAMPLE (checkpoint analysis only)
-       For the Java test class, see 5b_java_test_patterns.xml.
-       ======================================== -->
-
-  <complete_example>
-    <description>
-      WeatherAPI_App — 4 recorded sessions across 2 flows.
-      Real recording IDs (from WeatherAPI_App_RecordedMessages_Orig):
-
-        getCurrentWeather — session 1 (happy path, location=London):
-          00007494-6A511EA2-00000001-{0,1,2}.mxml
-
-        getCurrentWeather — session 2 (400 path, missing location param):
-          00007494-6A511F1F-00000002-{0,1}.mxml
-
-        getWeatherAlerts — session 1 (happy path):
-          000097C0-6A511EBA-00000001-{0,1,2}.mxml
-
-        getWeatherAlerts — session 2 (happy path, different location):
-          000097C0-6A511F30-00000002-{0,1,2}.mxml
-
-      For Java test class patterns, see 5b_java_test_patterns.xml.
-    </description>
-
-    <checkpoint_analysis><![CDATA[
-=== getCurrentWeather — session 1 (happy path) ===
--0.mxml  SOURCE=HTTP Input→out        TARGET=Prepare Request→in   (HTTP GET with ?location=London)
--1.mxml  SOURCE=Prepare Request→out   TARGET=HTTP Request→in      (URL built by ESQL)
--2.mxml  SOURCE=HTTP Request→out      TARGET=HTTP Reply→in        (live weather API response)
-
-Tests:
-  "Prepare Request" TC001 (happy): input=-0  expected=-1  terminal=out  (pure ESQL)
-  "HTTP Request"    TC001 (happy): input=-1  expected=-2  terminal=out  (live call — use ignorePath)
-
-=== getCurrentWeather — session 2 (400 missing location) ===
--0.mxml  SOURCE=HTTP Input→out        TARGET=Prepare Request→in   (HTTP GET with no location param)
--1.mxml  SOURCE=Prepare Request→failure  TARGET=HTTP Reply→in     (400 JSON error response)
-
-Tests:
-  "Prepare Request" TC002 (missing location): input=-0  expected=-1  terminal=failure
-
-=== getWeatherAlerts — sessions 1 & 2 (both happy path) ===
--0.mxml  SOURCE=HTTP Input→out        TARGET=Prepare Request→in
--1.mxml  SOURCE=Prepare Request→out   TARGET=HTTP Request→in
--2.mxml  SOURCE=HTTP Request→out      TARGET=HTTP Reply→in
-
-Tests:
-  "Prepare Request" TC001 (happy): input=-0  expected=-1  terminal=out
-  "HTTP Request"    TC001 (happy): input=-1  expected=-2  terminal=out  (live call — use ignorePath)
-
-Coverage gap: NO recording of getWeatherAlerts 400 path (missing location).
-To fill: record a request to /weather/alerts with no location param.
-    ]]></checkpoint_analysis>
-  </complete_example>
 
   <!-- ========================================
        SECTION 9: ibmint COMMAND-LINE TOOLS
@@ -525,19 +417,19 @@ To fill: record a request to /weather/alerts with no location param.
         ibmint generate msgindex --recorded-messages &lt;path-to-recordings-dir&gt;
       </syntax>
       <examples><![CDATA[
-# Analyse recordings from the OndotWorkflow application
-ibmint generate msgindex --recorded-messages mmc/OndotWorkflow/
+# Analyse recordings for an application (Linux/AIX)
+ibmint generate msgindex --recorded-messages recordings/AppName/
 
 # Analyse recordings on Windows
-ibmint generate msgindex --recorded-messages C:\temp\RecordedMessage\mmc\OndotWorkflow\
+ibmint generate msgindex --recorded-messages C:\temp\RecordedMessages\AppName\
       ]]></examples>
       <sample_output><![CDATA[
-BIP15215I: Found '14' recorded messages in directory 'C:\temp\RecordedMessage\mmc\OndotWorkflow\'.
+BIP15215I: Found '14' recorded messages in directory 'C:\temp\RecordedMessages\AppName\'.
 BIP15220I: Generating index from recorded messages.
 
 MessageID: 00006977-68DD7AF7-00000001
 
-  IIBHUB.ONDOT.INPUT: ; 00006977-68DD7AF7-00000001-0.mxml
+  MQ.APP.INPUT: ; 00006977-68DD7AF7-00000001-0.mxml
   Flow Order: 00006977-68DD7AF7-00000001-0.mxml; 00006977-68DD7AF7-00000001-1.mxml, ...
   Store Input Message: 00006977-68DD7AF7-00000001-1.mxml; 00006977-68DD7AF7-00000001-2.mxml
   Load Properties: 00006977-68DD7AF7-00000001-2.mxml; 00006977-68DD7AF7-00000001-3.mxml
@@ -614,27 +506,15 @@ ibmint generate tests \
   --output-test-project ../AppName_GeneratedTests \
   --java-class com.org.app.test.AppTest
       ]]></examples>
-      <!-- what_is_generated: see Workflow Step 4 <what_is_generated> above — identical content removed -->
       <notes>
         <note>
-          The generated project uses Gradle (build.gradle), not Maven. Gradle 8.2.1+
-          must be installed separately from https://gradle.org/install/ before the
-          command will succeed.
+          AIX: recorded messages must be copied (via scp) to a Windows/Linux development
+          environment with ACE Toolkit and Console before running this command.
         </note>
         <note>
-          The generated tests are a starting point — always review and enhance them.
-          Add ignorePath() for time-varying HTTP fields, rename methods descriptively,
-          add terminalPropagateCountIs() assertions. See workflow Step 5.
-        </note>
-        <note>
-          Since AIX does not include Java by default, recorded messages must be copied
-          (via scp) to a Windows development environment that has the ACE Toolkit and
-          Console installed before running this command.
-        </note>
-        <note>
-          Import into the ACE Toolkit after generation:
-          File → Import → Existing Projects into Workspace
-          (the Toolkit auto-detects the project type from testproject.descriptor).
+          After generation: File → Import → Existing Projects into Workspace in the ACE
+          Toolkit (auto-detected as a Test Project from testproject.descriptor).
+          Then proceed to workflow Step 5 to review and enhance the generated tests.
         </note>
       </notes>
     </command>
@@ -653,10 +533,10 @@ ibmint deploy \
       ]]></syntax>
       <example><![CDATA[
 ibmint deploy \
-  --input-path /path/to/Test_Common_Realtime_Workflow \
-  --output-integration-node mmcbroker \
-  --output-integration-server mmc \
-  --project Test_Common_Realtime_Workflow
+  --input-path /path/to/AppName_GeneratedTests \
+  --output-integration-node <integrationNodeName> \
+  --output-integration-server <serverName> \
+  --project AppName_GeneratedTests
       ]]></example>
     </command>
 
@@ -682,13 +562,13 @@ IntegrationServer \
         <parameter>--test-project: Name of the test project to run (must match deployed project name)</parameter>
       </parameters>
       <examples><![CDATA[
-# Run tests on AIX (OndotWorkflow example)
+# Run tests on AIX (MQ application example)
 IntegrationServer \
-  --work-dir /intgmqm/mqsidata/mqsi/components/mmcbroker/servers/mmc \
+  --work-dir /var/mqsi/components/<BrokerName>/servers/<ServerName> \
   --no-nodejs \
   --start-msgflows false \
-  --mq-queue-manager-name IVIMMC1 \
-  --test-project OndotWorkflow_GeneratedTests
+  --mq-queue-manager-name <QueueManagerName> \
+  --test-project AppName_GeneratedTests
 
 # Run tests on Windows (WeatherAPI example — no MQ)
 IntegrationServer \
@@ -709,261 +589,6 @@ IntegrationServer \
       </important_notes>
     </command>
   </ibmint_test_commands>
-
-  <!-- ========================================
-       SECTION 11: ENTERPRISE TESTING LIFECYCLE (5 STEPS)
-       ======================================== -->
-
-  <enterprise_testing_lifecycle>
-    <overview>
-      The enterprise testing lifecycle for IBM ACE uses a 5-step process derived from
-      real-world migration projects (v12 → v13). The approach validates that migrated
-      applications behave identically to the original by first running tests against
-      v12 to establish a baseline, then running the same tests against v13.
-    </overview>
-
-    <validation_strategy>
-      <description>
-        Two-phase validation approach:
-        1. Run all tests against the EXISTING (v12) broker — ensure ALL tests pass (baseline)
-        2. Run the SAME tests against the MIGRATED (v13) application — confirm functional parity
-        Passing both confirms the migration preserved all behaviour within the test scope.
-      </description>
-    </validation_strategy>
-
-    <step number="1">
-      <title>Record Messages</title>
-      <frequency>Once per application (depends on propagation coverage)</frequency>
-      <roles>Middleware + SQA</roles>
-      <requirements>
-        <item>Access to the running integration server (AIX or local)</item>
-        <item>Ability to update server.conf.yaml</item>
-        <item>Ability to restart the execution group</item>
-        <item>Sample messages to invoke the application</item>
-      </requirements>
-      <steps>
-        <step>
-          Enable recording by configuring RecordedMessageManager in server.conf.yaml
-          (NOT node.conf.yaml — recording config lives at the server level):
-          <code><![CDATA[
-ResourceManagers:
-  RecordedMessageManager:
-    recordedMessagePath: 'C:\temp\IntegrationServer\recorded_messages'
-    recordAllMessages: true
-          ]]></code>
-        </step>
-        <step>
-          Restart the execution group for the config change to take effect:
-          <code><![CDATA[
-# Traditional broker commands
-mqsistart mmcbroker -e mmc
-# or
-mqsistop mmcbroker -e mmc
-
-# ibmint commands (v13)
-ibmint start server mmc --integration-node mmcbroker
-ibmint stop  server mmc --integration-node mmcbroker
-# or restart the full node
-ibmint start node mmcbroker
-ibmint stop  node mmcbroker
-          ]]></code>
-        </step>
-        <step>Invoke the application with representative sample messages to trigger recording</step>
-        <step>
-          To stop recording, set recordAllMessages: false in server.conf.yaml and restart
-          the execution group.
-        </step>
-        <step>
-          Recorded .mxml files are stored in the directory specified by recordedMessagePath,
-          organised as: &lt;recordedMessagePath&gt;/&lt;AppName&gt;/&lt;FlowName&gt;/&lt;messageId&gt;-&lt;n&gt;.mxml
-        </step>
-      </steps>
-      <critical_note>
-        Configure recording in server.conf.yaml ONLY — NOT node.conf.yaml.
-        Tests run at integration server level and only server.conf.yaml is applied.
-      </critical_note>
-    </step>
-
-    <step number="2">
-      <title>Generate Tests</title>
-      <frequency>Once per application</frequency>
-      <roles>Development / SQA / Middleware</roles>
-      <requirements>
-        <item>IBM App Connect Enterprise Console (v12.0.8+)</item>
-        <item>Recorded messages from Step 1</item>
-        <item>Note: On AIX, copy recorded messages to Windows via scp first</item>
-      </requirements>
-      <steps>
-        <step>
-          Run ibmint generate msgindex to understand coverage BEFORE generating tests.
-          Pass the APP-level recordings directory (containing per-flow subdirectories):
-          <code><![CDATA[
-# Windows
-$cwd = (Get-Location).Path
-cmd /c "`"C:\Program Files\IBM\ACE\13.0.8.0\server\bin\mqsiprofile.cmd`" && ibmint generate msgindex --recorded-messages `"$cwd\recordings\AppName`"" 2>&1
-
-# Linux / AIX
-source /opt/ibm/ace/13.0.8.0/server/bin/mqsiprofile
-ibmint generate msgindex --recorded-messages /path/to/recordings/AppName/
-          ]]></code>
-          Review the output for coverage gaps — record more messages before generating
-          tests if key paths are missing.
-        </step>
-        <step>
-          Generate the test project using ibmint generate tests.
-          NOTE: Gradle 8.2.1+ must be installed first (https://gradle.org/install/).
-          --recorded-messages is searched recursively — pass app-level for all flows,
-          or a specific flow subdirectory to generate tests for one flow only:
-          <code><![CDATA[
-# Windows
-$cwd = (Get-Location).Path
-cmd /c "`"C:\Program Files\IBM\ACE\13.0.8.0\server\bin\mqsiprofile.cmd`" && ibmint generate tests --recorded-messages `"$cwd\recordings\AppName`" --output-test-project `"$cwd\AppName_GeneratedTests`" --java-class com.org.app.test.AppTest" 2>&1
-
-# Linux / AIX
-source /opt/ibm/ace/13.0.8.0/server/bin/mqsiprofile
-ibmint generate tests \
-  --recorded-messages /path/to/recordings/AppName/ \
-  --output-test-project /path/to/AppName_GeneratedTests \
-  --java-class com.org.app.test.AppTest
-          ]]></code>
-        </step>
-        <step>
-          Compile the test project and create a BAR file using the command line.
-          This is the IBM-documented step 3 in the procedure — it must happen BEFORE deploying.
-          Requires full source code including dependent libraries to be available locally:
-          <code><![CDATA[
-# Windows (cmd /c to inherit ACE profile)
-$cwd = (Get-Location).Path
-cmd /c "`"C:\Program Files\IBM\ACE\13.0.8.0\server\bin\mqsiprofile.cmd`" && ibmint package --input-path `"$cwd\AppName_GeneratedTests`" --output-bar-file `"$cwd\BARfiles\AppName_GeneratedTests.bar`" --project AppName_GeneratedTests" 2>&1
-
-# Linux / AIX
-source /opt/ibm/ace/13.0.8.0/server/bin/mqsiprofile
-ibmint package \
-  --input-path AppName_GeneratedTests \
-  --output-bar-file BARfiles/AppName_GeneratedTests.bar \
-  --project AppName_GeneratedTests
-          ]]></code>
-        </step>
-        <step>
-          Review and enhance the generated Java test class (see workflow Step 5):
-          add ignorePath() for HTTP Request tests, rename methods, add terminal assertions.
-          NOTE: This is optional per IBM docs — the generated tests can be used as-is
-          for basic regression coverage.
-        </step>
-        <step>
-          (Optional) Import the generated project into the ACE Toolkit for editing:
-          File → Import → Existing Projects into Workspace.
-          Import the application source code (and dependent libraries) into the Toolkit too.
-          Use the Toolkit to add further tests or extend existing ones.
-        </step>
-      </steps>
-    </step>
-
-    <step number="3">
-      <title>Deploy Tests</title>
-      <frequency>Once per application</frequency>
-      <roles>Development / SQA / Middleware</roles>
-      <requirements>
-        <item>IBM App Connect Enterprise Toolkit</item>
-        <item>Full source code including dependent libraries</item>
-        <item>Generated BAR file from Step 2</item>
-      </requirements>
-      <important_notes>
-        <note>The application under test MUST be deployed to the same execution group BEFORE deploying the test project</note>
-        <note>Access to full source code (including dependent libraries) is required for BAR creation</note>
-        <note>Deployment order matters: application first, test project second</note>
-      </important_notes>
-      <command><![CDATA[
-ibmint deploy \
-  --input-path /path/to/Test_Common_Realtime_Workflow \
-  --output-integration-node mmcbroker \
-  --output-integration-server mmc \
-  --project Test_Common_Realtime_Workflow
-      ]]></command>
-    </step>
-
-    <step number="4">
-      <title>Run Tests</title>
-      <frequency>Every migration or release cycle</frequency>
-      <roles>SQA + Middleware</roles>
-      <requirements>
-        <item>Access to the integration server environment</item>
-        <item>Ability to run the IntegrationServer command</item>
-      </requirements>
-      <command><![CDATA[
-IntegrationServer \
-  --work-dir /intgmqm/mqsidata/mqsi/components/mmcbroker/servers/mmc \
-  --no-nodejs \
-  --start-msgflows false \
-  --mq-queue-manager-name IVIMMC1 \
-  --test-project OndotWorkflow_GeneratedTests
-      ]]></command>
-      <notes>
-        <note>Only this step (Step 4) needs to be repeated for each migration or release cycle</note>
-        <note>Steps 1-3 are one-time setup activities per application</note>
-        <note>If new bugs are discovered, record the triggering messages and generate additional tests (go back to Step 1)</note>
-      </notes>
-    </step>
-
-    <step number="5" optional="true">
-      <title>Automate</title>
-      <frequency>Once (setup only)</frequency>
-      <roles>Middleware</roles>
-      <description>
-        Wrap the IntegrationServer command in a shell script that discovers all test projects
-        by naming convention and runs them all. Hook the script into Ansible for pipeline
-        execution without direct AIX access.
-      </description>
-      <shell_script><![CDATA[
-#!/bin/bash
-# run_all_generated_tests.sh
-# Usage: ./run_all_generated_tests.sh <BrokerName> <ExecutionGroupName> <QueueManagerName> [--log-mode file|console]
-
-BROKER_NAME=$1
-EG_NAME=$2
-QM_NAME=$3
-LOG_MODE=${4:-console}
-
-WORK_DIR="/var/mqsi/components/${BROKER_NAME}/servers/${EG_NAME}"
-
-for test_project in "${WORK_DIR}/run"/*_GeneratedTests; do
-    project_name=$(basename "$test_project")
-    echo "Running test project: $project_name"
-    IntegrationServer \
-      --work-dir "$WORK_DIR" \
-      --no-nodejs \
-      --start-msgflows false \
-      --mq-queue-manager-name "$QM_NAME" \
-      --test-project "$project_name"
-done
-      ]]></shell_script>
-      <ansible_playbook><![CDATA[
----
-- name: Run ACE test projects
-  hosts: my_broker_hosts
-  vars:
-    broker_name: "AIXTestNode"
-    eg_name: "AIXTestServer"
-    qm_name: "IVIMMC1"
-    log_mode: "file"  # or "console"
-
-  tasks:
-    - name: Run all tests via script
-      shell: >
-        /home/cecuser/run_all_tests.sh
-        {{ broker_name }}
-        {{ eg_name }}
-        {{ qm_name }}
-        --log-mode {{ log_mode }}
-      register: test_results
-      ignore_errors: yes
-
-    - name: Print test summary output
-      debug:
-        msg: "{{ test_results.stdout }}"
-      ]]></ansible_playbook>
-    </step>
-  </enterprise_testing_lifecycle>
 
   <!-- Section 12 (naming_conventions) has been moved to
        3a_test_project_structure_and_enterprise_patterns.xml -->

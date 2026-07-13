@@ -96,11 +96,6 @@ ResourceManagers:
       </description>
     </mapping_to_tests>
 
-    <where_to_place_mxml_files>
-      Copy the .mxml files from the RecordedMessageManager output directory into:
-      [AppName]_GeneratedTests/src/main/resources/
-      They are loaded at runtime via the classloader as classpath resources.
-    </where_to_place_mxml_files>
   </recorded_messages>
 
   <!-- ========================================
@@ -175,7 +170,7 @@ Expected: Terminal:"out" to have propagate count:1
         <code><![CDATA[
 @Disabled("Propagation count mismatch due to sequential node execution — rewrite as whole-flow test")
 @Test
-public void OndotWorkflow_OndotWorkflow_MF_Store_Input_Message_TestCase_001() throws TestException {
+public void AppName_FlowName_Store_Input_Message_TestCase_001() throws TestException {
     // existing test logic
 }
         ]]></code>
@@ -214,22 +209,7 @@ BrokerRegistry:
       </rule>
     </failure>
 
-    <failure name="generated_tests_brittle">
-      <description>
-        Auto-generated tests are tightly coupled to the recorded messages and are brittle —
-        any change to the application may require regenerating and reimporting tests.
-      </description>
-      <symptoms>
-        <symptom>Tests that passed yesterday fail after a minor code change</symptom>
-        <symptom>Large number of ignorePath() calls needed to maintain tests</symptom>
-        <symptom>Tests difficult to understand without reading both .mxml files and generated Java</symptom>
-      </symptoms>
-      <recommendation>
-        Use generated tests as a starting point and for regression testing during migration.
-        For long-lived test suites, invest in manually written whole-flow integration tests
-        that are more resilient to application changes.
-      </recommendation>
-    </failure>
+    <!-- generated_tests_brittle: see 5b_java_test_patterns.xml Part D generated_vs_manual_tests -->
   </common_failures>
 
   <!-- ========================================
@@ -268,29 +248,42 @@ done
       </installation>
     </bash_script_for_source_target>
 
-    <mapping_table_example>
-      <description>
-        Example output from parse_mxml.sh for getCurrentWeather flow:
-      </description>
-      <table><![CDATA[
-File: 000071A0-6A4EAD36-00000001-0.mxml
-  Source: HTTP Input
-  Target: Prepare Request
-
-File: 000071A0-6A4EAD36-00000001-1.mxml
-  Source: Prepare Request
-  Target: HTTP Request
-
-File: 000071A0-6A4EAD36-00000001-2.mxml
-  Source: HTTP Request
-  Target: HTTP Reply
-
-Therefore:
-  Test "Prepare Request": input=*-0.mxml  expected=*-1.mxml  terminal=out
-  Test "HTTP Request":    input=*-1.mxml  expected=*-2.mxml  terminal=out  (use ignorePath for live response)
-      ]]></table>
-    </mapping_table_example>
   </parsing_mxml_files>
+
+  <!-- ========================================
+       SECTION 8: CHECKPOINT ANALYSIS TEMPLATE
+       ======================================== -->
+
+  <checkpoint_analysis_template>
+    <description>
+      How to read ibmint generate msgindex output and map it to test cases.
+      Apply this template to any application — replace [AppName], [FlowN], [NodeN] with real values.
+      For Java test code that consumes these pairs, see 5b_java_test_patterns.xml.
+    </description>
+
+    <template><![CDATA[
+Given ibmint generate msgindex output for [AppName]:
+
+  MessageID: [msgId1]
+    [InputNode]:   ; [msgId1]-0.mxml                         ← input node — not directly testable
+    [Node1]:       [msgId1]-0.mxml; [msgId1]-1.mxml          ← input=-0, expected=-1, terminal=out
+    [Node2]:       [msgId1]-1.mxml; [msgId1]-2.mxml          ← input=-1, expected=-2, terminal=out
+    [OutputNode]:  [msgId1]-2.mxml;                          ← terminal node — not directly testable
+
+  MessageID: [msgId2]                                        ← second session (error/alternate path)
+    [InputNode]:   ; [msgId2]-0.mxml
+    [Node1]:       [msgId2]-0.mxml; [msgId2]-1.mxml          ← input=-0, expected=-1, terminal=failure
+    [OutputNode]:  [msgId2]-1.mxml;                          ← Node2 skipped — failure terminal fired
+
+Derived test plan:
+  [Node1] TC001 (normal):  input=[msgId1]-0  expected=[msgId1]-1  terminal=out
+  [Node1] TC002 (error):   input=[msgId2]-0  expected=[msgId2]-1  terminal=failure
+  [Node2] TC001 (normal):  input=[msgId1]-1  expected=[msgId1]-2  terminal=out  (live call? use ignorePath)
+
+Coverage gaps: any node that never appears as SOURCE across ALL sessions has no recorded output.
+  Fix: record the missing scenario, then re-run ibmint generate tests.
+    ]]></template>
+  </checkpoint_analysis_template>
 
 </ace_test_recorded_messages>
 
