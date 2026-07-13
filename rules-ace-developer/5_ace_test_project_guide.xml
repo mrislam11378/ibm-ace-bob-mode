@@ -487,24 +487,18 @@ ibmint generate tests \
         </prerequisite>
       </prerequisites>
       <examples><![CDATA[
-# Windows — WeatherAPI app-level dir (cmd /c to inherit ACE profile)
+# Windows — app-level dir (all flows), cmd /c chains profile + ibmint in same shell
 $cwd = (Get-Location).Path
-cmd /c "`"C:\Program Files\IBM\ACE\13.0.8.0\server\bin\mqsiprofile.cmd`" && ibmint generate tests --recorded-messages `"$cwd\WeatherAPI_App_RecordedMessages_Orig\WeatherAPI_App`" --output-test-project `"$cwd\WeatherAPI_App_GeneratedTests`" --java-class com.weather.api.test.WeatherAPITest" 2>&1
+cmd /c "`"C:\Program Files\IBM\ACE\13.0.8.0\server\bin\mqsiprofile.cmd`" && ibmint generate tests --recorded-messages `"$cwd\[RecordingsDir]\[AppName]`" --output-test-project `"$cwd\[AppName]_GeneratedTests`" --java-class com.[org].[app].test.[ClassName]" 2>&1
 
-# Windows — single flow dir only
-cmd /c "`"C:\Program Files\IBM\ACE\13.0.8.0\server\bin\mqsiprofile.cmd`" && ibmint generate tests --recorded-messages `"$cwd\WeatherAPI_App_RecordedMessages_Orig\WeatherAPI_App\getCurrentWeather`" --output-test-project `"$cwd\WeatherAPI_App_GeneratedTests`" --java-class com.weather.api.test.WeatherAPITest" 2>&1
+# Windows — single flow dir
+cmd /c "`"C:\Program Files\IBM\ACE\13.0.8.0\server\bin\mqsiprofile.cmd`" && ibmint generate tests --recorded-messages `"$cwd\[RecordingsDir]\[AppName]\[FlowName]`" --output-test-project `"$cwd\[AppName]_GeneratedTests`" --java-class com.[org].[app].test.[ClassName]" 2>&1
 
-# Linux / AIX — absolute paths (from IBM docs example)
+# Linux / AIX
 ibmint generate tests \
-  --recorded-messages ~/Dev/recordings/AppName \
-  --output-test-project ~/Dev/AppName_GeneratedTests \
-  --java-class com.org.app.test.AppTest
-
-# Linux / AIX — relative paths
-ibmint generate tests \
-  --recorded-messages AppName \
-  --output-test-project ../AppName_GeneratedTests \
-  --java-class com.org.app.test.AppTest
+  --recorded-messages recordings/[AppName] \
+  --output-test-project [AppName]_GeneratedTests \
+  --java-class com.[org].[app].test.[ClassName]
       ]]></examples>
       <notes>
         <note>
@@ -562,20 +556,20 @@ IntegrationServer \
         <parameter>--test-project: Name of the test project to run (must match deployed project name)</parameter>
       </parameters>
       <examples><![CDATA[
-# Run tests on AIX (MQ application example)
+# AIX (MQ application)
 IntegrationServer \
-  --work-dir /var/mqsi/components/<BrokerName>/servers/<ServerName> \
+  --work-dir /var/mqsi/components/[BrokerName]/servers/[ServerName] \
   --no-nodejs \
   --start-msgflows false \
-  --mq-queue-manager-name <QueueManagerName> \
-  --test-project AppName_GeneratedTests
+  --mq-queue-manager-name [QueueManagerName] \
+  --test-project [AppName]_GeneratedTests
 
-# Run tests on Windows (WeatherAPI example — no MQ)
+# Windows (HTTP application — no MQ)
 IntegrationServer \
-  --work-dir ace_demo \
+  --work-dir [server-work-dir] \
   --no-nodejs \
   --start-msgflows false \
-  --test-project WeatherAPI_App_GeneratedTests
+  --test-project [AppName]_GeneratedTests
       ]]></examples>
       <important_notes>
         <note>
