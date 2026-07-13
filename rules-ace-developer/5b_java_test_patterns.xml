@@ -55,6 +55,47 @@ public void cleanupTest() throws TestException {
       ]]></code>
     </mandatory_cleanup>
 
+    <testmessageassembly_api>
+      <critical_rule priority="CRITICAL">
+        <title>Only use documented TestMessageAssembly methods — never invent methods</title>
+        <description>
+          TestMessageAssembly is a final class in com.ibm.integration.test.v1.
+          The ONLY methods available are listed below. DO NOT call any method not on this list —
+          the compiler will reject it with "The method X is undefined for the type TestMessageAssembly".
+
+          Known hallucinated methods that do NOT exist:
+            - setMockMessageContent(String, String)   ← does not exist
+            - getMessageValue(String)                 ← does not exist
+            - setMessageBody(String)                  ← does not exist
+            - getField(String)                        ← does not exist
+
+          There is NO way to construct a TestMessageAssembly from a plain String payload.
+          The ONLY valid ways to populate a TestMessageAssembly are:
+            1. buildFromRecordedMessageAssembly(InputStream) — from a recorded .mxml file
+            2. Leave it empty (used internally by NodeSpy/NodeStub)
+
+          For node-level unit tests that need specific input, use a recorded .mxml checkpoint
+          as the input — do NOT attempt to construct the message content from a String.
+        </description>
+        <real_api><![CDATA[
+// ── Populating ────────────────────────────────────────────────────────────────
+assembly.buildFromRecordedMessageAssembly(InputStream stream);
+    // Loads a recorded .mxml checkpoint. This is the ONLY way to populate an assembly.
+
+// ── Comparing ─────────────────────────────────────────────────────────────────
+// Use the Hamcrest matcher — do NOT call comparison methods directly on the object:
+assertThat(actualAssembly, equalsMessage(expectedAssembly));
+assertThat(actualAssembly, equalsMessage(expectedAssembly).ignorePath("/path/to/field", false));
+
+// ── Retrieving from NodeSpy ───────────────────────────────────────────────────
+TestMessageAssembly out = nodeSpy.propagatedMessageAssembly("out", 1);
+    // Gets the Nth message propagated from the named terminal (1-based index).
+TestMessageAssembly in  = nodeSpy.receivedMessageAssembly("in", 1);
+    // Gets the Nth message received at the named terminal (used in whole-flow tests).
+        ]]></real_api>
+      </critical_rule>
+    </testmessageassembly_api>
+
     <helper_method_load_assembly>
       <description>
         Always include this private helper for loading .mxml files from the classpath.
@@ -555,12 +596,28 @@ public void WholeFlow_LogError_Test(
         <description>
           Use @Disabled to mark a test whose recorded messages are not yet captured or whose
           assertions need rework. Always include a reason string.
+          ALWAYS add the import when using @Disabled — it is NOT included in the default imports
+          and the compiler will silently fall back to the fully-qualified name without it,
+          making the code inconsistent. Use the short annotation form @Disabled, never
+          @org.junit.jupiter.api.Disabled.
         </description>
+        <required_import>import org.junit.jupiter.api.Disabled;</required_import>
         <code><![CDATA[
+// Required import — add to the top of the file:
+import org.junit.jupiter.api.Disabled;
+
+// Usage:
 @Disabled("Error path recordings not yet captured — record a catch-terminal scenario first")
 @ParameterizedTest
 @CsvSource({"[inputMxml], [expectedMxml]"})
 public void WholeFlow_ErrorPath_Test(String inputMXMLName, String expectedMXMLName) throws TestException {
+    // ... test body
+}
+
+// For plain @Test methods:
+@Disabled("Sequential fan-out — NodeSpy.evaluate() cannot assert propagateCount=2")
+@Test
+public void SomeNode_Test() throws TestException {
     // ... test body
 }
         ]]></code>
@@ -614,6 +671,24 @@ bypassStub.onCall().propagatesInputMessage("in", "failure");
         <problem>Calling receivedMessageAssembly() before propagate()</problem>
         <symptom>NullPointerException or "no message received" error</symptom>
         <solution>Always call inputSpy.propagate() FIRST, then retrieve outputs with receivedMessageAssembly()</solution>
+      </mistake>
+      <mistake>
+        <problem>Calling a method on TestMessageAssembly that does not exist</problem>
+        <symptom>
+          Java compile error: "The method X is undefined for the type TestMessageAssembly"
+          Common offenders: setMockMessageContent(String, String), getMessageValue(String),
+          setMessageBody(String), getField(String) — NONE of these methods exist.
+        </symptom>
+        <solution>
+          Only two operations are valid on TestMessageAssembly:
+            1. assembly.buildFromRecordedMessageAssembly(InputStream) — populate from a .mxml file
+            2. assertThat(actual, equalsMessage(expected))            — compare via Hamcrest matcher
+          To retrieve outputs use nodeSpy.propagatedMessageAssembly("terminal", n) or
+          nodeSpy.receivedMessageAssembly("terminal", n).
+          There is NO API to construct a TestMessageAssembly from a raw String payload.
+          If you need specific input for a unit test, use the recorded .mxml checkpoint
+          for that node's input terminal — do not try to build message content from scratch.
+        </solution>
       </mistake>
     </common_mistakes>
 

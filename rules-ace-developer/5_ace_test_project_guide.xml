@@ -287,9 +287,15 @@
       </what_is_generated>
       <after_generation>
         After ibmint generate tests completes:
-          1. Review the generated Java class — it is a starting point, not a final test suite
-          2. Proceed to Step 5 to enhance the generated tests
-          3. Import into the ACE Toolkit: File → Import → Existing Projects into Workspace
+          1. IMMEDIATELY create the three files ibmint does NOT generate:
+               a. .project          — use the template in 3a_test_project_structure_and_enterprise_patterns.xml
+               b. .classpath        — use the template in 3a_test_project_structure_and_enterprise_patterns.xml
+                  (omitting .classpath causes "Cannot find the class file for java.lang.Object"
+                   and "The type java.lang.Object cannot be resolved" Java build errors)
+               c. .settings/org.eclipse.core.resources.prefs — sets UTF-8 encoding
+          2. Review the generated Java class — it is a starting point, not a final test suite
+          3. Proceed to Step 5 to enhance the generated tests
+          4. Import into the ACE Toolkit: File → Import → Existing Projects into Workspace
              (the Toolkit auto-detects it as a Test Project from testproject.descriptor)
       </after_generation>
     </step>
@@ -306,6 +312,17 @@
           Add ignorePath() calls on HTTP Request tests for all time-varying fields.
           Generated tests will fail on the next run if the response body, Date header,
           CDN headers, or rate-limit counters change. See common_failures/timestamp_mismatch.
+        </enhancement>
+        <enhancement priority="critical">
+          Review generated tests for fan-out nodes (Flow Order, HTTP Reply with multiple
+          outbound connections) and nodes whose downstream targets are already directly
+          unit-tested. These tests will fail at runtime due to sequential propagation count
+          issues (NodeSpy.evaluate() sees count=1 instead of count=2).
+          Add a comment block above such tests explaining:
+            - Why the propagation count assertion will fail
+            - That the downstream nodes are covered by dedicated unit tests
+            - A suggestion to disable if the user does not need it
+          DO NOT disable or delete the test automatically — leave that decision to the user.
         </enhancement>
         <enhancement priority="high">
           Rename test methods from generated identifiers (e.g. test_0_PrepareRequest_out_0)
@@ -332,7 +349,7 @@
       </enhancements>
       <decision_table>
         <row>
-          <node_type>Compute (ESQL)</node_type>
+          <node_type>Compute (ESQL) / Mapping node</node_type>
           <test_type>Unit test — no live calls</test_type>
           <assertion>equalsMessage(expected) — exact match against recorded output</assertion>
         </row>
@@ -347,9 +364,42 @@
           <assertion>Use the HTTP Input checkpoint (-0.mxml) as INPUT to the first Compute node test</assertion>
         </row>
         <row>
-          <node_type>HTTP Reply</node_type>
+          <node_type>HTTP Reply / MQ Output (terminal nodes)</node_type>
           <test_type>Not directly testable via NodeSpy (terminal node)</test_type>
           <assertion>Verify upstream node propagates to correct terminal</assertion>
+        </row>
+        <row>
+          <node_type>Fan-out node (Flow Order, HTTP Reply with multiple connections)</node_type>
+          <test_type>Problematic for node-level tests — sequential propagation count fails</test_type>
+          <assertion>
+            Add a comment block above the generated test containing:
+              1. An ASCII flow diagram built from the actual nodes in the .msgflow, using
+                 this template (replace [NodeX] placeholders with real node labels):
+
+                 // Flow:
+                 //
+                 //   [InputNode] ──► [NodeA] ──► [FanOutNode] ──([terminal], 1st)──► [DownstreamNode1] ──► [TerminalNode]
+                 //                                    │
+                 //                                    └──────([terminal], 2nd)──► [DownstreamNode2] ──► [TerminalNode]
+                 //
+
+                 For three or more fan-out branches, add further └── lines indented to align
+                 under the │. For named terminals (first/second) use the terminal name instead
+                 of "1st"/"2nd". For a single terminal firing multiple times use (out, 1st),
+                 (out, 2nd), etc.
+
+              2. An explanation that terminalPropagateCountIs("[terminal]", N) will fail because
+                 NodeSpy.evaluate() only sees count=1 on sequential fan-out (the second
+                 propagation fires after the first downstream node completes at runtime)
+              3. Which downstream nodes are already covered by dedicated unit tests
+              4. A suggestion that the user may want to @Disabled this test if not needed,
+                 or rewrite it as a whole-flow test
+
+            DO NOT disable or delete automatically — leave that decision to the user.
+            If the fan-out node itself must be tested end-to-end, write a whole-flow test
+            using setStopAtInputTerminal("in") on each downstream node and assert each
+            received a message.
+          </assertion>
         </row>
       </decision_table>
     </step>

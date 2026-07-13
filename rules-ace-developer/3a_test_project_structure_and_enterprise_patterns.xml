@@ -198,6 +198,11 @@
         Java classpath referencing JRE, JUnit 5, and the ACE Integration Test Library.
         The "Integration Test Library" user library is configured by the ACE Toolkit automatically
         when the project is imported and the Integration Test Library is installed.
+        Must be created manually — ibmint generate tests does NOT create it.
+        Omitting this file causes the Eclipse Java builder to fail with:
+          "Cannot find the class file for java.lang.Object"
+          "The type java.lang.Object cannot be resolved"
+        These errors clear immediately once .classpath is added and the project is refreshed.
       </description>
       <template><![CDATA[
 <?xml version="1.0" encoding="UTF-8"?>
