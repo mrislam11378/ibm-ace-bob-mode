@@ -98,7 +98,7 @@ ResourceManagers:
 
     <where_to_place_mxml_files>
       Copy the .mxml files from the RecordedMessageManager output directory into:
-      [AppName]_Test/src/main/resources/
+      [AppName]_GeneratedTests/src/main/resources/
       They are loaded at runtime via the classloader as classpath resources.
     </where_to_place_mxml_files>
   </recorded_messages>

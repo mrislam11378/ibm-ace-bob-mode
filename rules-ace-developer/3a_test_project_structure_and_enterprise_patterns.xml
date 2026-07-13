@@ -18,8 +18,8 @@
       - The user wants to verify node-level behaviour without running the full flow end-to-end
     </description>
     <naming_convention>
-      Name the test project [ApplicationName]_Test.
-      Example: WeatherAPI_App → WeatherAPI_App_Test
+      Name the test project [AppName]_GeneratedTests.
+      Example: WeatherAPI_App → WeatherAPI_App_GeneratedTests
     </naming_convention>
   </when_to_create>
 
@@ -33,7 +33,7 @@
       Note: The .project natures and buildSpec are DIFFERENT from an Application project.
     </description>
     <layout><![CDATA[
-[AppName]_Test/
+[AppName]_GeneratedTests/
 ├── .project                            ← Eclipse project descriptor (test natures)
 ├── .classpath                          ← Java classpath (JRE + JUnit5 + Integration Test Library)
 ├── .settings/
@@ -69,7 +69,7 @@
       <template><![CDATA[
 <?xml version="1.0" encoding="UTF-8"?>
 <projectDescription>
-	<name>[AppName]_Test</name>
+	<name>[AppName]_GeneratedTests</name>
 	<comment></comment>
 	<projects>
 		<project>[AppName]</project>
@@ -284,13 +284,13 @@ task copyRecordedMessages(type: Copy) {
 jar.dependsOn copyRecordedMessages
 
 defaultTasks 'jar'
-rootProject.name = '[AppName]_Test'
+rootProject.name = '[AppName]_GeneratedTests'
       ]]></template>
     </file>
 
     <file name="settings.gradle">
       <template><![CDATA[
-rootProject.name = '[AppName]_Test'
+rootProject.name = '[AppName]_GeneratedTests'
       ]]></template>
     </file>
   </project_structure>
@@ -301,33 +301,30 @@ rootProject.name = '[AppName]_Test'
 
   <naming_conventions>
     <description>
-      Consistent naming makes automation (scripts and Ansible) reliable across all test projects.
-      Adopt this convention from the start — scripts use glob patterns like GenTest_* to discover
-      all test projects automatically.
+      All generated test projects use the [AppName]_GeneratedTests naming pattern.
+      This is consistent, simple, and makes automation (scripts, glob patterns) reliable.
     </description>
 
     <test_project_naming>
-      <pattern>&lt;Prefix&gt;_&lt;Version&gt;_&lt;ApplicationName&gt;</pattern>
+      <pattern>&lt;ApplicationName&gt;_GeneratedTests</pattern>
       <description>
-        Prefix identifies the type/source (GenTest = auto-generated, WholeFlow = manual integration test).
-        Version is a sequential integer starting at 0. Increment when adding new test coverage.
+        Use the application project name followed by _GeneratedTests.
+        This is the single naming convention for all ibmint-generated test projects.
       </description>
       <examples>
-        <example>OndotWorkflow → GenTest_0_OndotWorkflow</example>
-        <example>Common_Realtime_Workflow → GenTest_0_Common_Realtime_Workflow</example>
-        <example>Common_Realtime_Workflow (v2 with additional scenarios) → GenTest_1_Common_Realtime_Workflow</example>
-        <example>WeatherAPI_App → GenTest_0_WeatherAPI_App</example>
+        <example>WeatherAPI_App → WeatherAPI_App_GeneratedTests</example>
+        <example>OndotWorkflow → OndotWorkflow_GeneratedTests</example>
+        <example>Common_Realtime_Workflow → Common_Realtime_Workflow_GeneratedTests</example>
       </examples>
       <alternative>
-        Instead of creating a new Test Project for each recording pass, you can update the
-        existing project with new Java files and recorded messages manually, keeping the
-        same project name.
+        If you record additional scenarios and regenerate, update the existing
+        [AppName]_GeneratedTests project in place rather than creating a new one.
       </alternative>
     </test_project_naming>
 
     <bar_file_naming>
       <description>BAR files for test projects follow the same pattern as the project name</description>
-      <example>GenTest_0_OndotWorkflow.bar</example>
+      <example>WeatherAPI_App_GeneratedTests.bar</example>
     </bar_file_naming>
   </naming_conventions>
 

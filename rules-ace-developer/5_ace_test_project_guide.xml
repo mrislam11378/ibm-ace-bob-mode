@@ -89,7 +89,7 @@
       <title>Identify the Application under test</title>
       <description>
         Note the exact application project name. The test project name follows the convention
-        GenTest_[Version]_[AppName] (e.g. GenTest_0_WeatherAPI_App). See naming_conventions section.
+        [AppName]_GeneratedTests (e.g. WeatherAPI_App_GeneratedTests). See naming_conventions section.
       </description>
     </step>
 
@@ -264,11 +264,11 @@
           Run via cmd /c so the ACE profile is active in the same shell:
 
             $cwd = (Get-Location).Path
-            cmd /c "`"C:\Program Files\IBM\ACE\13.0.8.0\server\bin\mqsiprofile.cmd`" &amp;&amp; ibmint generate tests --recorded-messages `"$cwd\[recordingsDir]`" --output-test-project `"$cwd\GenTest_0_[AppName]`" --java-class com.[org].[app].test.[ClassName]" 2&gt;&amp;1
+            cmd /c "`"C:\Program Files\IBM\ACE\13.0.8.0\server\bin\mqsiprofile.cmd`" &amp;&amp; ibmint generate tests --recorded-messages `"$cwd\[recordingsDir]`" --output-test-project `"$cwd\[AppName]_GeneratedTests`" --java-class com.[org].[app].test.[ClassName]" 2&gt;&amp;1
 
           Concrete example (WeatherAPI — all flows, app-level dir):
             $cwd = (Get-Location).Path
-            cmd /c "`"C:\Program Files\IBM\ACE\13.0.8.0\server\bin\mqsiprofile.cmd`" &amp;&amp; ibmint generate tests --recorded-messages `"$cwd\WeatherAPI_App_RecordedMessages_Orig\WeatherAPI_App`" --output-test-project `"$cwd\GenTest_0_WeatherAPI_App`" --java-class com.weather.api.test.WeatherAPITest" 2&gt;&amp;1
+            cmd /c "`"C:\Program Files\IBM\ACE\13.0.8.0\server\bin\mqsiprofile.cmd`" &amp;&amp; ibmint generate tests --recorded-messages `"$cwd\WeatherAPI_App_RecordedMessages_Orig\WeatherAPI_App`" --output-test-project `"$cwd\WeatherAPI_App_GeneratedTests`" --java-class com.weather.api.test.WeatherAPITest" 2&gt;&amp;1
 
           Key points:
             - --recorded-messages is searched recursively — pass any level that contains .mxml files
@@ -281,13 +281,13 @@
           source /opt/ibm/ace/13.0.8.0/server/bin/mqsiprofile
           ibmint generate tests \
             --recorded-messages /path/to/recordings/AppName/ \
-            --output-test-project /path/to/GenTest_0_AppName \
+            --output-test-project /path/to/AppName_GeneratedTests \
             --java-class com.org.app.test.AppTest
         </linux_aix>
       </execution_commands>
       <what_is_generated>
         ibmint generate tests creates a Gradle-based project:
-          GenTest_0_AppName/
+          AppName_GeneratedTests/
           ├── .project                              ← Eclipse project with ACE test natures
           ├── testproject.descriptor                ← References the application under test
           ├── .classpath                            ← ACE test framework JARs on classpath
@@ -382,13 +382,13 @@
         or when no recorded messages exist. If you used Step 4 successfully, skip this step.
       </description>
       <actions>
-        <action>Create [AppName]_Test/.project (use ACE toolkit natures — see project_structure section)</action>
-        <action>Create [AppName]_Test/testproject.descriptor (reference the Application)</action>
-        <action>Create [AppName]_Test/.classpath</action>
-        <action>Create [AppName]_Test/.settings/org.eclipse.core.resources.prefs</action>
-        <action>Create [AppName]_Test/build.gradle (replace [AppName] in rootProject.name)</action>
-        <action>Create [AppName]_Test/settings.gradle</action>
-        <action>Copy all .mxml files to [AppName]_Test/src/main/resources/</action>
+        <action>Create [AppName]_GeneratedTests/.project (use ACE toolkit natures — see project_structure section)</action>
+        <action>Create [AppName]_GeneratedTests/testproject.descriptor (reference the Application)</action>
+        <action>Create [AppName]_GeneratedTests/.classpath</action>
+        <action>Create [AppName]_GeneratedTests/.settings/org.eclipse.core.resources.prefs</action>
+        <action>Create [AppName]_GeneratedTests/build.gradle (replace [AppName] in rootProject.name)</action>
+        <action>Create [AppName]_GeneratedTests/settings.gradle</action>
+        <action>Copy all .mxml files to [AppName]_GeneratedTests/src/main/resources/</action>
         <action>Write the Java test class manually using patterns from Section 4</action>
       </actions>
     </step>
@@ -577,7 +577,7 @@ ibmint generate tests \
         </parameter>
         <parameter name="--output-test-project testProjectName" required="true">
           Name or path of the directory where the generated test project will be created.
-          Use the GenTest_[version]_[AppName] naming convention.
+          Use the [AppName]_GeneratedTests naming convention.
         </parameter>
         <parameter name="--java-class javaName" required="true">
           Fully-qualified Java class name for the generated test class.
@@ -597,22 +597,22 @@ ibmint generate tests \
       <examples><![CDATA[
 # Windows — WeatherAPI app-level dir (cmd /c to inherit ACE profile)
 $cwd = (Get-Location).Path
-cmd /c "`"C:\Program Files\IBM\ACE\13.0.8.0\server\bin\mqsiprofile.cmd`" && ibmint generate tests --recorded-messages `"$cwd\WeatherAPI_App_RecordedMessages_Orig\WeatherAPI_App`" --output-test-project `"$cwd\GenTest_0_WeatherAPI_App`" --java-class com.weather.api.test.WeatherAPITest" 2>&1
+cmd /c "`"C:\Program Files\IBM\ACE\13.0.8.0\server\bin\mqsiprofile.cmd`" && ibmint generate tests --recorded-messages `"$cwd\WeatherAPI_App_RecordedMessages_Orig\WeatherAPI_App`" --output-test-project `"$cwd\WeatherAPI_App_GeneratedTests`" --java-class com.weather.api.test.WeatherAPITest" 2>&1
 
 # Windows — single flow dir only
-cmd /c "`"C:\Program Files\IBM\ACE\13.0.8.0\server\bin\mqsiprofile.cmd`" && ibmint generate tests --recorded-messages `"$cwd\WeatherAPI_App_RecordedMessages_Orig\WeatherAPI_App\getCurrentWeather`" --output-test-project `"$cwd\GenTest_0_getCurrentWeather`" --java-class com.weather.api.test.GetCurrentWeatherTest" 2>&1
+cmd /c "`"C:\Program Files\IBM\ACE\13.0.8.0\server\bin\mqsiprofile.cmd`" && ibmint generate tests --recorded-messages `"$cwd\WeatherAPI_App_RecordedMessages_Orig\WeatherAPI_App\getCurrentWeather`" --output-test-project `"$cwd\WeatherAPI_App_GeneratedTests`" --java-class com.weather.api.test.WeatherAPITest" 2>&1
 
 # Linux / AIX — absolute paths (from IBM docs example)
 ibmint generate tests \
-  --recorded-messages ~/Dev/recordings/flow1 \
-  --output-test-project ~/Dev/tests/Flow1Tests \
-  --java-class com.my.bar.Flow1Tests
+  --recorded-messages ~/Dev/recordings/AppName \
+  --output-test-project ~/Dev/AppName_GeneratedTests \
+  --java-class com.org.app.test.AppTest
 
-# Linux / AIX — relative paths (run from inside ~/Dev/recordings)
+# Linux / AIX — relative paths
 ibmint generate tests \
-  --recorded-messages flow1 \
-  --output-test-project ../tests/Flow1Tests \
-  --java-class com.my.bar.Flow1Tests
+  --recorded-messages AppName \
+  --output-test-project ../AppName_GeneratedTests \
+  --java-class com.org.app.test.AppTest
       ]]></examples>
       <!-- what_is_generated: see Workflow Step 4 <what_is_generated> above — identical content removed -->
       <notes>
@@ -688,14 +688,14 @@ IntegrationServer \
   --no-nodejs \
   --start-msgflows false \
   --mq-queue-manager-name IVIMMC1 \
-  --test-project GenTest_OndotWorkflow
+  --test-project OndotWorkflow_GeneratedTests
 
 # Run tests on Windows (WeatherAPI example — no MQ)
 IntegrationServer \
   --work-dir ace_demo \
   --no-nodejs \
   --start-msgflows false \
-  --test-project WeatherAPI_App_Test
+  --test-project WeatherAPI_App_GeneratedTests
       ]]></examples>
       <important_notes>
         <note>
@@ -817,13 +817,13 @@ ibmint generate msgindex --recorded-messages /path/to/recordings/AppName/
           <code><![CDATA[
 # Windows
 $cwd = (Get-Location).Path
-cmd /c "`"C:\Program Files\IBM\ACE\13.0.8.0\server\bin\mqsiprofile.cmd`" && ibmint generate tests --recorded-messages `"$cwd\recordings\AppName`" --output-test-project `"$cwd\GenTest_0_AppName`" --java-class com.org.app.test.AppTest" 2>&1
+cmd /c "`"C:\Program Files\IBM\ACE\13.0.8.0\server\bin\mqsiprofile.cmd`" && ibmint generate tests --recorded-messages `"$cwd\recordings\AppName`" --output-test-project `"$cwd\AppName_GeneratedTests`" --java-class com.org.app.test.AppTest" 2>&1
 
 # Linux / AIX
 source /opt/ibm/ace/13.0.8.0/server/bin/mqsiprofile
 ibmint generate tests \
   --recorded-messages /path/to/recordings/AppName/ \
-  --output-test-project /path/to/GenTest_0_AppName \
+  --output-test-project /path/to/AppName_GeneratedTests \
   --java-class com.org.app.test.AppTest
           ]]></code>
         </step>
@@ -834,14 +834,14 @@ ibmint generate tests \
           <code><![CDATA[
 # Windows (cmd /c to inherit ACE profile)
 $cwd = (Get-Location).Path
-cmd /c "`"C:\Program Files\IBM\ACE\13.0.8.0\server\bin\mqsiprofile.cmd`" && ibmint package --input-path `"$cwd\GenTest_0_AppName`" --output-bar-file `"$cwd\BARfiles\GenTest_0_AppName.bar`" --project GenTest_0_AppName" 2>&1
+cmd /c "`"C:\Program Files\IBM\ACE\13.0.8.0\server\bin\mqsiprofile.cmd`" && ibmint package --input-path `"$cwd\AppName_GeneratedTests`" --output-bar-file `"$cwd\BARfiles\AppName_GeneratedTests.bar`" --project AppName_GeneratedTests" 2>&1
 
 # Linux / AIX
 source /opt/ibm/ace/13.0.8.0/server/bin/mqsiprofile
 ibmint package \
-  --input-path GenTest_0_AppName \
-  --output-bar-file BARfiles/GenTest_0_AppName.bar \
-  --project GenTest_0_AppName
+  --input-path AppName_GeneratedTests \
+  --output-bar-file BARfiles/AppName_GeneratedTests.bar \
+  --project AppName_GeneratedTests
           ]]></code>
         </step>
         <step>
@@ -896,7 +896,7 @@ IntegrationServer \
   --no-nodejs \
   --start-msgflows false \
   --mq-queue-manager-name IVIMMC1 \
-  --test-project GenTest_OndotWorkflow
+  --test-project OndotWorkflow_GeneratedTests
       ]]></command>
       <notes>
         <note>Only this step (Step 4) needs to be repeated for each migration or release cycle</note>
@@ -926,7 +926,7 @@ LOG_MODE=${4:-console}
 
 WORK_DIR="/var/mqsi/components/${BROKER_NAME}/servers/${EG_NAME}"
 
-for test_project in "${WORK_DIR}/run"/GenTest_*; do
+for test_project in "${WORK_DIR}/run"/*_GeneratedTests; do
     project_name=$(basename "$test_project")
     echo "Running test project: $project_name"
     IntegrationServer \
