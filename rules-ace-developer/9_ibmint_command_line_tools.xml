@@ -1,0 +1,188 @@
+<ibmint_command_line_tools>
+  <overview>
+    IBM App Connect Enterprise v12.0.8+ provides ibmint CLI commands to automate test generation
+    and analysis from recorded messages. These commands run from the IBM App Connect Enterprise
+    Console (not the Toolkit) and require mqsiprofile to be sourced first.
+  </overview>
+
+  <command name="ibmint generate msgindex">
+    <description>
+      Analyses recorded messages in a directory and prints a message index showing
+      which nodes were exercised by each .mxml file and the propagation path.
+      Use this BEFORE generating tests to understand coverage and map .mxml → node.
+    </description>
+    <syntax>
+      ibmint generate msgindex --recorded-messages &lt;path-to-recordings-dir&gt;
+    </syntax>
+    <examples><![CDATA[
+# Analyse recordings for an application (Linux/AIX)
+ibmint generate msgindex --recorded-messages recordings/AppName/
+
+# Analyse recordings on Windows
+ibmint generate msgindex --recorded-messages C:\temp\RecordedMessages\AppName\
+    ]]></examples>
+    <sample_output><![CDATA[
+BIP15215I: Found '14' recorded messages in directory 'C:\temp\RecordedMessages\AppName\'.
+BIP15220I: Generating index from recorded messages.
+
+MessageID: 00006977-68DD7AF7-00000001
+
+  MQ.APP.INPUT: ; 00006977-68DD7AF7-00000001-0.mxml
+  Flow Order: 00006977-68DD7AF7-00000001-0.mxml; 00006977-68DD7AF7-00000001-1.mxml, ...
+  Store Input Message: 00006977-68DD7AF7-00000001-1.mxml; 00006977-68DD7AF7-00000001-2.mxml
+  Load Properties: 00006977-68DD7AF7-00000001-2.mxml; 00006977-68DD7AF7-00000001-3.mxml
+  ...
+    ]]></sample_output>
+    <how_to_read>
+      Each line shows: NodeName: InputCheckpoint; OutputCheckpoint(s)
+      The format is: [NodeLabel]: [input .mxml]; [output .mxml(s)]
+      This tells you exactly which checkpoint pair to use for each node's test case.
+    </how_to_read>
+  </command>
+
+  <command name="ibmint generate tests">
+    <description>
+      PRIMARY method for creating ACE test projects. Automatically generates a complete
+      JUnit 5 Gradle test project from recorded messages. Available in ACE v12.0.8 and above.
+      The generated project is structurally correct and importable into the ACE Toolkit
+      without any manual file creation.
+
+      ALWAYS prefer this command over manual project creation. See workflow Step 4 in
+      5_ace_test_project_guide.xml.
+
+      Source: https://www.ibm.com/docs/en/app-connect/13.0.x?topic=commands-ibmint-generate-tests-command
+    </description>
+    <syntax><![CDATA[
+ibmint generate tests \
+  --recorded-messages <directory> \
+  --output-test-project <testProjectName> \
+  --java-class <javaName>
+    ]]></syntax>
+    <parameters>
+      <parameter name="--recorded-messages directory" required="true">
+        Fully qualified (or relative) path to a directory containing recorded .mxml files.
+        The command searches ALL subdirectories recursively, so you can pass any level:
+          - A single flow dir:  recordings/WeatherAPI_App/getCurrentWeather   (tests one flow)
+          - An app-level dir:   recordings/WeatherAPI_App                     (tests all flows)
+        Be careful not to pass a very broad path (e.g. /) — it will try to process everything.
+      </parameter>
+      <parameter name="--output-test-project testProjectName" required="true">
+        Name or path of the directory where the generated test project will be created.
+        Use the [AppName]_GeneratedTests naming convention.
+      </parameter>
+      <parameter name="--java-class javaName" required="true">
+        Fully-qualified Java class name for the generated test class.
+        Example: com.weather.api.test.WeatherAPITest
+      </parameter>
+      <parameter name="--help" required="false">
+        Output command help information to the console.
+      </parameter>
+    </parameters>
+    <prerequisites>
+      <prerequisite priority="critical">
+        Gradle version 8.2.1 or higher must be installed BEFORE running this command.
+        Gradle is NOT bundled with ACE — install from https://gradle.org/install/
+        The generated project is Gradle-based (build.gradle), NOT Maven (pom.xml).
+      </prerequisite>
+    </prerequisites>
+    <examples><![CDATA[
+# Windows — app-level dir (all flows), cmd /c chains profile + ibmint in same shell
+$cwd = (Get-Location).Path
+cmd /c "`"C:\Program Files\IBM\ACE\13.0.8.0\server\bin\mqsiprofile.cmd`" && ibmint generate tests --recorded-messages `"$cwd\[RecordingsDir]\[AppName]`" --output-test-project `"$cwd\[AppName]_GeneratedTests`" --java-class com.[org].[app].test.[ClassName]" 2>&1
+
+# Windows — single flow dir
+cmd /c "`"C:\Program Files\IBM\ACE\13.0.8.0\server\bin\mqsiprofile.cmd`" && ibmint generate tests --recorded-messages `"$cwd\[RecordingsDir]\[AppName]\[FlowName]`" --output-test-project `"$cwd\[AppName]_GeneratedTests`" --java-class com.[org].[app].test.[ClassName]" 2>&1
+
+# Linux / AIX
+ibmint generate tests \
+  --recorded-messages recordings/[AppName] \
+  --output-test-project [AppName]_GeneratedTests \
+  --java-class com.[org].[app].test.[ClassName]
+    ]]></examples>
+    <notes>
+      <note>
+        AIX: recorded messages must be copied (via scp) to a Windows/Linux development
+        environment with ACE Toolkit and Console before running this command.
+      </note>
+      <note>
+        After generation: File → Import → Existing Projects into Workspace in the ACE
+        Toolkit (auto-detected as a Test Project from testproject.descriptor).
+        Then proceed to workflow Step 5 in 5_ace_test_project_guide.xml to review and
+        enhance the generated tests.
+      </note>
+    </notes>
+  </command>
+
+  <command name="ibmint deploy (test project)">
+    <description>
+      Deploys a test project BAR file to an integration node and server.
+      The application under test must already be deployed to the same server.
+    </description>
+    <syntax><![CDATA[
+ibmint deploy \
+  --input-path <test-project-directory> \
+  --output-integration-node <nodeName> \
+  --output-integration-server <serverName> \
+  --project <TestProjectName>
+    ]]></syntax>
+    <example><![CDATA[
+ibmint deploy \
+  --input-path /path/to/AppName_GeneratedTests \
+  --output-integration-node <integrationNodeName> \
+  --output-integration-server <serverName> \
+  --project AppName_GeneratedTests
+    ]]></example>
+  </command>
+
+  <command name="IntegrationServer --test-project">
+    <description>
+      Runs all tests in a deployed test project on a standalone integration server.
+      This is the command used to execute tests in CI/CD pipelines and automation.
+      The server MUST have start-msgflows set to false so only the test framework runs.
+    </description>
+    <syntax><![CDATA[
+IntegrationServer \
+  --work-dir <server-work-directory> \
+  --no-nodejs \
+  --start-msgflows false \
+  [--mq-queue-manager-name <QueueManagerName>] \
+  --test-project <TestProjectName>
+    ]]></syntax>
+    <parameters>
+      <parameter>--work-dir: Full path to /var/mqsi/components/&lt;BrokerName&gt;/servers/&lt;ExecutionGroupName&gt;</parameter>
+      <parameter>--no-nodejs: Disable Node.js runtime (not needed for test execution)</parameter>
+      <parameter>--start-msgflows false: Do not start the application flows — only run tests</parameter>
+      <parameter>--mq-queue-manager-name: Required only if the flows use MQ</parameter>
+      <parameter>--test-project: Name of the test project to run (must match deployed project name)</parameter>
+    </parameters>
+    <examples><![CDATA[
+# AIX (MQ application)
+IntegrationServer \
+  --work-dir /var/mqsi/components/[BrokerName]/servers/[ServerName] \
+  --no-nodejs \
+  --start-msgflows false \
+  --mq-queue-manager-name [QueueManagerName] \
+  --test-project [AppName]_GeneratedTests
+
+# Windows (HTTP application — no MQ)
+IntegrationServer \
+  --work-dir [server-work-dir] \
+  --no-nodejs \
+  --start-msgflows false \
+  --test-project [AppName]_GeneratedTests
+    ]]></examples>
+    <important_notes>
+      <note>
+        Tests run at the Integration SERVER level, NOT the Integration NODE level.
+        Configurations in node.conf.yaml are NOT applied. Add any required settings
+        (truststores, keystores, etc.) to the server's overrides/server.conf.yaml instead.
+      </note>
+      <note>
+        Review test results in the console output. Non-zero exit code indicates test failures.
+      </note>
+    </important_notes>
+  </command>
+
+</ibmint_command_line_tools>
+
+<!-- Made with Bob -->

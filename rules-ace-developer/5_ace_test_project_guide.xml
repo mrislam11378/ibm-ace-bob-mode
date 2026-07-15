@@ -293,11 +293,128 @@
                   (omitting .classpath causes "Cannot find the class file for java.lang.Object"
                    and "The type java.lang.Object cannot be resolved" Java build errors)
                c. .settings/org.eclipse.core.resources.prefs — sets UTF-8 encoding
-          2. Review the generated Java class — it is a starting point, not a final test suite
-          3. Proceed to Step 5 to enhance the generated tests
-          4. Import into the ACE Toolkit: File → Import → Existing Projects into Workspace
+          2. DO NOT rewrite or overwrite the generated Java class. The generated file is the
+             canonical node-level test suite — it must be kept intact so it can be regenerated
+             by ibmint generate tests after new recordings are added.
+             Enhancements (parameterization, comments, ignorePath) are made IN PLACE in the
+             generated file, but the test methods themselves are not moved or deleted unless
+             the user explicitly requests it.
+          3. For fan-out nodes identified during msgindex analysis, add a comment block with
+             a "NOTE: This test will FAIL" explanation to the generated test method — DO NOT
+             disable or delete it. Add the Mermaid flow diagram to README.md "Known Limitations"
+             instead of inline in the Java comment. See the fan-out row in the decision_table.
+          4. For whole-flow tests (driving the full flow end-to-end), create a SEPARATE Java
+             file named [AppName]WholeFlowTest.java in the same package. Do not mix whole-flow
+             tests into the generated node-level test file.
+          5. Create a README.md in the root of the test project. See readme_template below.
+          6. Proceed to Step 5 to enhance the generated tests
+          7. Import into the ACE Toolkit: File → Import → Existing Projects into Workspace
              (the Toolkit auto-detects it as a Test Project from testproject.descriptor)
       </after_generation>
+
+      <readme_template>
+        <description>
+          Create README.md in the test project root immediately after generation.
+          Populate each section by combining msgindex output, .msgflow inspection, and
+          the recorded message directory listing. If the application .msgflow files are
+          available in the workspace, read them to identify ALL nodes in the flow and
+          cross-reference against the recorded sessions to find coverage gaps.
+        </description>
+        <template><![CDATA[
+# [AppName] Test Project
+
+## Application Under Test
+- **Application:** [AppName]
+- **Flow(s):** [comma-separated list of .msgflow files]
+- **Recorded messages directory:** [path to RecordedMessages/[AppName]]
+- **Generated:** [date]
+
+## Flow Overview
+
+Describe the flow structure using a Mermaid diagram for each .msgflow. Read the
+.msgflow file to build this — do not guess node names or connections.
+
+```mermaid
+flowchart LR
+    [InputNode] --> [Node1]
+    [Node1] --> [Node2]
+    [Node2] --> [OutputNode]
+    [Node1] -->|failure| [ErrorNode]
+```
+
+## Recorded Sessions
+
+| Session ID | Entry Point | Checkpoints | Path |
+|---|---|---|---|
+| [messageId] | [/endpoint or node name] | [n] | [Happy / Failure / Other] |
+
+## Coverage Analysis
+
+### Happy Path
+List each happy-path session with the nodes exercised:
+- Session [messageId]: [InputNode] → [Node1] → [Node2] → [OutputNode] ✅
+
+### Failure / Error Path
+List failure-path sessions if recorded, or flag as missing:
+- ❌ Not recorded — no catch-terminal or failure-path sessions captured.
+  To add: enable recording, invoke the flow with invalid input, re-run ibmint generate tests.
+
+### Nodes NOT Covered by Recordings
+Cross-reference all nodes in the .msgflow against the msgindex output.
+List any node that appears in the flow but has NO recorded checkpoint:
+
+| Node | Type | Reason not covered |
+|---|---|---|
+| [NodeName] | [ComIbm...] | [e.g. error terminal never triggered / node on unrecorded path] |
+
+If all nodes are covered, state: "All testable nodes covered by recorded sessions."
+
+## Test Classes
+
+| Class | Type | Tests |
+|---|---|---|
+| [AppName]Test.java | Node-level (generated) | [n] test methods — one per node transition |
+| [AppName]WholeFlowTest.java | Whole-flow | [n] test methods — end-to-end path coverage |
+| [AppName]MappingUnitTest.java | Unit (manual) | [n] test methods — mapping/compute nodes |
+
+## Known Limitations
+
+### Fan-out / Sequential Propagation Tests
+
+Tests generated for fan-out nodes (Flow Order, nodes with multiple outbound connections)
+will fail with `terminalPropagateCountIs("[terminal]", N)` because `NodeSpy.evaluate()`
+only sees count=1 on sequential fan-out — the second propagation fires after the first
+downstream node completes at runtime, not simultaneously.
+
+The flow at the point of failure:
+
+```mermaid
+flowchart LR
+    [InputNode] --> [NodeA]
+    [NodeA] --> [FanOutNode]
+    [FanOutNode] -->|"[terminal], 1st"| [DownstreamNode1]
+    [FanOutNode] -->|"[terminal], 2nd"| [DownstreamNode2]
+    [DownstreamNode1] --> [TerminalNode1]
+    [DownstreamNode2] --> [TerminalNode2]
+```
+
+Replace `[FanOutNode]`, `[DownstreamNode1]`, `[DownstreamNode2]` with the real node labels
+from the .msgflow. Add further edges for three or more branches.
+
+Affected tests — downstream nodes already covered by dedicated tests:
+- `[TestMethodName]` — `[FanOutNode]` fan-out. `[DownstreamNode1]` covered by `[ClassName1].java`, `[DownstreamNode2]` covered by `[ClassName2].java`.
+
+## Re-generating Tests
+
+To add new recordings and regenerate:
+1. Set recordAllMessages: true in server.conf.yaml and restart the server
+2. Invoke the flow to capture new scenarios
+3. Set recordAllMessages: false and restart
+4. Run: ibmint generate tests --recorded-messages [recordedMessagesPath] --output-test-project [testProjectPath]
+5. Copy new .mxml files into src/main/resources/
+6. Update this README with the new sessions and coverage analysis
+        ]]></template>
+      </readme_template>
     </step>
 
     <step number="5">
@@ -372,28 +489,16 @@
           <node_type>Fan-out node (Flow Order, HTTP Reply with multiple connections)</node_type>
           <test_type>Problematic for node-level tests — sequential propagation count fails</test_type>
           <assertion>
-            Add a comment block above the generated test containing:
-              1. An ASCII flow diagram built from the actual nodes in the .msgflow, using
-                 this template (replace [NodeX] placeholders with real node labels):
-
-                 // Flow:
-                 //
-                 //   [InputNode] ──► [NodeA] ──► [FanOutNode] ──([terminal], 1st)──► [DownstreamNode1] ──► [TerminalNode]
-                 //                                    │
-                 //                                    └──────([terminal], 2nd)──► [DownstreamNode2] ──► [TerminalNode]
-                 //
-
-                 For three or more fan-out branches, add further └── lines indented to align
-                 under the │. For named terminals (first/second) use the terminal name instead
-                 of "1st"/"2nd". For a single terminal firing multiple times use (out, 1st),
-                 (out, 2nd), etc.
-
-              2. An explanation that terminalPropagateCountIs("[terminal]", N) will fail because
+            Add a comment block above the generated test explaining:
+              1. That terminalPropagateCountIs("[terminal]", N) will fail because
                  NodeSpy.evaluate() only sees count=1 on sequential fan-out (the second
-                 propagation fires after the first downstream node completes at runtime)
-              3. Which downstream nodes are already covered by dedicated unit tests
-              4. A suggestion that the user may want to @Disabled this test if not needed,
-                 or rewrite it as a whole-flow test
+                 propagation fires after the first downstream node completes at runtime).
+              2. Which downstream nodes are already covered by dedicated unit tests.
+              3. A suggestion that the user may want to @Disabled this test if not needed,
+                 or rewrite it as a whole-flow test.
+
+            Place the Mermaid flow diagram for the fan-out structure in README.md under
+            the "Known Limitations" section — NOT inline in the Java comment block.
 
             DO NOT disable or delete automatically — leave that decision to the user.
             If the fan-out node itself must be tested end-to-end, write a whole-flow test
@@ -447,201 +552,26 @@
   </common_mistakes>
 
   <!-- ========================================
-       SECTION 9: ibmint COMMAND-LINE TOOLS
+       CONTENT SPLIT ACROSS RELATED FILES
+       ========================================
+       The following content was extracted from this file into dedicated rule files.
+       Reference by filename — not by legacy section number.
+
+       ibmint CLI commands (generate msgindex, generate tests, deploy, run):
+         → 9_ibmint_command_line_tools.xml
+
+       Test project file structure, .project/.classpath templates, naming conventions,
+       JAR precedence rules:
+         → 3a_test_project_structure_and_enterprise_patterns.xml
+
+       Recorded .mxml files — enabling recording, file naming, checkpoint structure,
+       common test failures caused by recorded data:
+         → 5a_recorded_messages.xml
+
+       Java test code patterns — NodeSpy, NodeStub, @ParameterizedTest, TestMessageAssembly
+       API reference, common Java mistakes:
+         → 5b_java_test_patterns.xml
        ======================================== -->
-
-  <ibmint_test_commands>
-    <overview>
-      IBM App Connect Enterprise v12.0.8+ provides ibmint CLI commands to automate test generation
-      and analysis from recorded messages. These commands run from the IBM App Connect Enterprise
-      Console (not the Toolkit) and require mqsiprofile to be sourced first.
-    </overview>
-
-    <command name="ibmint generate msgindex">
-      <description>
-        Analyses recorded messages in a directory and prints a message index showing
-        which nodes were exercised by each .mxml file and the propagation path.
-        Use this BEFORE generating tests to understand coverage and map .mxml → node.
-      </description>
-      <syntax>
-        ibmint generate msgindex --recorded-messages &lt;path-to-recordings-dir&gt;
-      </syntax>
-      <examples><![CDATA[
-# Analyse recordings for an application (Linux/AIX)
-ibmint generate msgindex --recorded-messages recordings/AppName/
-
-# Analyse recordings on Windows
-ibmint generate msgindex --recorded-messages C:\temp\RecordedMessages\AppName\
-      ]]></examples>
-      <sample_output><![CDATA[
-BIP15215I: Found '14' recorded messages in directory 'C:\temp\RecordedMessages\AppName\'.
-BIP15220I: Generating index from recorded messages.
-
-MessageID: 00006977-68DD7AF7-00000001
-
-  MQ.APP.INPUT: ; 00006977-68DD7AF7-00000001-0.mxml
-  Flow Order: 00006977-68DD7AF7-00000001-0.mxml; 00006977-68DD7AF7-00000001-1.mxml, ...
-  Store Input Message: 00006977-68DD7AF7-00000001-1.mxml; 00006977-68DD7AF7-00000001-2.mxml
-  Load Properties: 00006977-68DD7AF7-00000001-2.mxml; 00006977-68DD7AF7-00000001-3.mxml
-  ...
-      ]]></sample_output>
-      <how_to_read>
-        Each line shows: NodeName: InputCheckpoint; OutputCheckpoint(s)
-        The format is: [NodeLabel]: [input .mxml]; [output .mxml(s)]
-        This tells you exactly which checkpoint pair to use for each node's test case.
-      </how_to_read>
-    </command>
-
-    <command name="ibmint generate tests">
-      <description>
-        PRIMARY method for creating ACE test projects. Automatically generates a complete
-        JUnit 5 Gradle test project from recorded messages. Available in ACE v12.0.8 and above.
-        The generated project is structurally correct and importable into the ACE Toolkit
-        without any manual file creation.
-
-        ALWAYS prefer this command over manual project creation. See workflow Step 4.
-
-        Source: https://www.ibm.com/docs/en/app-connect/13.0.x?topic=commands-ibmint-generate-tests-command
-      </description>
-      <syntax><![CDATA[
-ibmint generate tests \
-  --recorded-messages <directory> \
-  --output-test-project <testProjectName> \
-  --java-class <javaName>
-      ]]></syntax>
-      <parameters>
-        <parameter name="--recorded-messages directory" required="true">
-          Fully qualified (or relative) path to a directory containing recorded .mxml files.
-          The command searches ALL subdirectories recursively, so you can pass any level:
-            - A single flow dir:  recordings/WeatherAPI_App/getCurrentWeather   (tests one flow)
-            - An app-level dir:   recordings/WeatherAPI_App                     (tests all flows)
-          Be careful not to pass a very broad path (e.g. /) — it will try to process everything.
-        </parameter>
-        <parameter name="--output-test-project testProjectName" required="true">
-          Name or path of the directory where the generated test project will be created.
-          Use the [AppName]_GeneratedTests naming convention.
-        </parameter>
-        <parameter name="--java-class javaName" required="true">
-          Fully-qualified Java class name for the generated test class.
-          Example: com.weather.api.test.WeatherAPITest
-        </parameter>
-        <parameter name="--help" required="false">
-          Output command help information to the console.
-        </parameter>
-      </parameters>
-      <prerequisites>
-        <prerequisite priority="critical">
-          Gradle version 8.2.1 or higher must be installed BEFORE running this command.
-          Gradle is NOT bundled with ACE — install from https://gradle.org/install/
-          The generated project is Gradle-based (build.gradle), NOT Maven (pom.xml).
-        </prerequisite>
-      </prerequisites>
-      <examples><![CDATA[
-# Windows — app-level dir (all flows), cmd /c chains profile + ibmint in same shell
-$cwd = (Get-Location).Path
-cmd /c "`"C:\Program Files\IBM\ACE\13.0.8.0\server\bin\mqsiprofile.cmd`" && ibmint generate tests --recorded-messages `"$cwd\[RecordingsDir]\[AppName]`" --output-test-project `"$cwd\[AppName]_GeneratedTests`" --java-class com.[org].[app].test.[ClassName]" 2>&1
-
-# Windows — single flow dir
-cmd /c "`"C:\Program Files\IBM\ACE\13.0.8.0\server\bin\mqsiprofile.cmd`" && ibmint generate tests --recorded-messages `"$cwd\[RecordingsDir]\[AppName]\[FlowName]`" --output-test-project `"$cwd\[AppName]_GeneratedTests`" --java-class com.[org].[app].test.[ClassName]" 2>&1
-
-# Linux / AIX
-ibmint generate tests \
-  --recorded-messages recordings/[AppName] \
-  --output-test-project [AppName]_GeneratedTests \
-  --java-class com.[org].[app].test.[ClassName]
-      ]]></examples>
-      <notes>
-        <note>
-          AIX: recorded messages must be copied (via scp) to a Windows/Linux development
-          environment with ACE Toolkit and Console before running this command.
-        </note>
-        <note>
-          After generation: File → Import → Existing Projects into Workspace in the ACE
-          Toolkit (auto-detected as a Test Project from testproject.descriptor).
-          Then proceed to workflow Step 5 to review and enhance the generated tests.
-        </note>
-      </notes>
-    </command>
-
-    <command name="ibmint deploy (test project)">
-      <description>
-        Deploys a test project BAR file to an integration node and server.
-        The application under test must already be deployed to the same server.
-      </description>
-      <syntax><![CDATA[
-ibmint deploy \
-  --input-path <test-project-directory> \
-  --output-integration-node <nodeName> \
-  --output-integration-server <serverName> \
-  --project <TestProjectName>
-      ]]></syntax>
-      <example><![CDATA[
-ibmint deploy \
-  --input-path /path/to/AppName_GeneratedTests \
-  --output-integration-node <integrationNodeName> \
-  --output-integration-server <serverName> \
-  --project AppName_GeneratedTests
-      ]]></example>
-    </command>
-
-    <command name="IntegrationServer --test-project">
-      <description>
-        Runs all tests in a deployed test project on a standalone integration server.
-        This is the command used to execute tests in CI/CD pipelines and automation.
-        The server MUST have start-msgflows set to false so only the test framework runs.
-      </description>
-      <syntax><![CDATA[
-IntegrationServer \
-  --work-dir <server-work-directory> \
-  --no-nodejs \
-  --start-msgflows false \
-  [--mq-queue-manager-name <QueueManagerName>] \
-  --test-project <TestProjectName>
-      ]]></syntax>
-      <parameters>
-        <parameter>--work-dir: Full path to /var/mqsi/components/&lt;BrokerName&gt;/servers/&lt;ExecutionGroupName&gt;</parameter>
-        <parameter>--no-nodejs: Disable Node.js runtime (not needed for test execution)</parameter>
-        <parameter>--start-msgflows false: Do not start the application flows — only run tests</parameter>
-        <parameter>--mq-queue-manager-name: Required only if the flows use MQ</parameter>
-        <parameter>--test-project: Name of the test project to run (must match deployed project name)</parameter>
-      </parameters>
-      <examples><![CDATA[
-# AIX (MQ application)
-IntegrationServer \
-  --work-dir /var/mqsi/components/[BrokerName]/servers/[ServerName] \
-  --no-nodejs \
-  --start-msgflows false \
-  --mq-queue-manager-name [QueueManagerName] \
-  --test-project [AppName]_GeneratedTests
-
-# Windows (HTTP application — no MQ)
-IntegrationServer \
-  --work-dir [server-work-dir] \
-  --no-nodejs \
-  --start-msgflows false \
-  --test-project [AppName]_GeneratedTests
-      ]]></examples>
-      <important_notes>
-        <note>
-          Tests run at the Integration SERVER level, NOT the Integration NODE level.
-          Configurations in node.conf.yaml are NOT applied. Add any required settings
-          (truststores, keystores, etc.) to the server's overrides/server.conf.yaml instead.
-        </note>
-        <note>
-          Review test results in the console output. Non-zero exit code indicates test failures.
-        </note>
-      </important_notes>
-    </command>
-  </ibmint_test_commands>
-
-  <!-- Section 12 (naming_conventions) has been moved to
-       3a_test_project_structure_and_enterprise_patterns.xml -->
-
-  <!-- Sections 13+14 (common_failures, understanding_recorded_messages) moved to 5a_recorded_messages.xml -->
-  <!-- Sections 10+15 (nodestub_api, generated_vs_manual_tests) moved to 5b_java_test_patterns.xml -->
-
-  <!-- Section 16 (jar_precedence) has been moved to
-       3a_test_project_structure_and_enterprise_patterns.xml -->
 
 </ace_test_project_guide>
 

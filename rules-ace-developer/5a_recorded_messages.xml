@@ -160,25 +160,29 @@ java.lang.AssertionError:
 Expected: Terminal:"out" to have propagate count:1
      but: Node "Store Input Message" Terminal:"out" has propagate count:0
       ]]></example_error>
-      <fix_option_1>
-        Modify the generated test to remove or adjust the propagation count assertion for
-        the terminal that fires after the sequential execution completes.
-      </fix_option_1>
-      <fix_option_2>
-        Temporarily disable the failing test with @Disabled until it can be rewritten as
-        a whole-flow integration test (Section 10 of 5_ace_test_project_guide.xml).
-        <code><![CDATA[
-@Disabled("Propagation count mismatch due to sequential node execution — rewrite as whole-flow test")
-@Test
-public void AppName_FlowName_Store_Input_Message_TestCase_001() throws TestException {
-    // existing test logic
-}
-        ]]></code>
-      </fix_option_2>
+      <decision_rule>
+        Apply the following decision in order — stop at the first condition that is true:
+
+        1. Are ALL downstream nodes of the fan-out node already covered by dedicated
+           node-level or unit tests?
+           YES → Add an ASCII flow diagram comment and "NOTE: This test will FAIL" block
+                 to the generated test (see fan-out row in 5_ace_test_project_guide.xml
+                 decision_table). DO NOT disable or delete — leave that to the user.
+           NO  → Continue to step 2.
+
+        2. Does the user need end-to-end verification that ALL branches receive the message?
+           YES → Create a whole-flow test in a separate [AppName]WholeFlowTest.java using
+                 setStopAtInputTerminal("in") on each downstream node and assert each
+                 received a message. See 5b_java_test_patterns.xml for the whole-flow pattern.
+           NO  → Add the comment block as per step 1 and suggest @Disabled to the user.
+
+        NEVER automatically disable or delete the generated test — always present the
+        options to the user and let them decide.
+      </decision_rule>
       <recommendation>
-        Propagation count mismatches usually indicate that auto-generated tests are not the
-        right approach for that node. Write a whole-flow integration test instead
-        that tests the complete message propagation lifecycle.
+        Propagation count mismatches on fan-out nodes indicate that auto-generated node-level
+        tests cannot fully verify the sequential propagation lifecycle. A whole-flow test in
+        a separate file is the correct long-term solution.
       </recommendation>
     </failure>
 

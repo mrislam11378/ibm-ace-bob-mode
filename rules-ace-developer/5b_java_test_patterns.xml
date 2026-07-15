@@ -60,8 +60,7 @@ public void cleanupTest() throws TestException {
         <title>Only use documented TestMessageAssembly methods — never invent methods</title>
         <description>
           TestMessageAssembly is a final class in com.ibm.integration.test.v1.
-          The ONLY methods available are listed below. DO NOT call any method not on this list —
-          the compiler will reject it with "The method X is undefined for the type TestMessageAssembly".
+          DO NOT call any method not documented below — the compiler will reject it.
 
           Known hallucinated methods that do NOT exist:
             - setMockMessageContent(String, String)   ← does not exist
@@ -69,32 +68,155 @@ public void cleanupTest() throws TestException {
             - setMessageBody(String)                  ← does not exist
             - getField(String)                        ← does not exist
 
-          There is NO way to construct a TestMessageAssembly from a plain String payload.
-          The ONLY valid ways to populate a TestMessageAssembly are:
+          Valid ways to populate a TestMessageAssembly:
             1. buildFromRecordedMessageAssembly(InputStream) — from a recorded .mxml file
-            2. Leave it empty (used internally by NodeSpy/NodeStub)
-
-          For node-level unit tests that need specific input, use a recorded .mxml checkpoint
-          as the input — do NOT attempt to construct the message content from a String.
+            2. buildBLOBMessage(InputStream)                 — from a raw file stream
+            3. buildBLOBMessage(byte[])                      — from a byte array
+            4. Leave it empty (used internally by NodeSpy/NodeStub)
         </description>
         <real_api><![CDATA[
 // ── Populating ────────────────────────────────────────────────────────────────
 assembly.buildFromRecordedMessageAssembly(InputStream stream);
-    // Loads a recorded .mxml checkpoint. This is the ONLY way to populate an assembly.
+    // Loads a recorded .mxml checkpoint.
 
-// ── Comparing ─────────────────────────────────────────────────────────────────
-// Use the Hamcrest matcher — do NOT call comparison methods directly on the object:
-assertThat(actualAssembly, equalsMessage(expectedAssembly));
-assertThat(actualAssembly, equalsMessage(expectedAssembly).ignorePath("/path/to/field", false));
+assembly.buildBLOBMessage(InputStream stream);
+    // Loads raw binary content (JSON file, XML file, etc.) as a BLOB message.
+    // Use when no .mxml recording exists and you are building input from a plain file.
 
-// ── Retrieving from NodeSpy ───────────────────────────────────────────────────
-TestMessageAssembly out = nodeSpy.propagatedMessageAssembly("out", 1);
-    // Gets the Nth message propagated from the named terminal (1-based index).
-TestMessageAssembly in  = nodeSpy.receivedMessageAssembly("in", 1);
-    // Gets the Nth message received at the named terminal (used in whole-flow tests).
+assembly.buildBLOBMessage(byte[] bytes);
+    // Loads raw bytes as a BLOB message.
+    // Use for synthetic or invalid input scenarios (e.g. "notValidJSON".getBytes()).
+
+// ── Seeding LocalEnvironment / Environment before propagation ─────────────────
+assembly.localEnvironmentPath("fieldName").setValue(value);
+    // Sets a LocalEnvironment field. The path is a dot-notation relative path
+    // (e.g. "testNumberOfRetriesAttribute", "testCurrentTimeGMT").
+
+assembly.environmentPath("Variables.flagName").setValue(value);
+    // Sets an Environment.Variables field.
+
+// ── Reading individual fields (dot notation) ──────────────────────────────────
+assembly.messagePath("JSON.Data.fieldName").getValueAsString();
+    // Returns the string value at the dot-notation path. See individual_field_assertion pattern.
+    // DO NOT use slash/XPath notation here — use dot notation only.
+
+// ── Comparing (use Hamcrest matchers — do NOT compare directly) ───────────────
+assertThat(actual, equalsMessage(expected));
+assertThat(actual, equalsMessage(expected).ignorePath("/Message/path/to/field", false));
+    // ignorePath uses XPath slash notation — NOT dot notation.
         ]]></real_api>
       </critical_rule>
     </testmessageassembly_api>
+
+    <nodespy_api>
+      <description>
+        NodeSpy (com.ibm.integration.test.v1.NodeSpy) observes a node at test time.
+        The node executes its full logic and propagates normally — NodeSpy only records
+        what happened so assertions can be made afterwards.
+
+        NodeStub EXTENDS NodeSpy. All methods listed here are available on both
+        NodeSpy and NodeStub unless noted otherwise.
+
+        Source: IBM ACE IntegrationTest.jar Javadoc
+      </description>
+      <real_api><![CDATA[
+// ── Constructors (both NodeSpy and NodeStub) ──────────────────────────────────
+new NodeSpy(SpyObjectReference nodeRef)   // preferred — use with SpyObjectReference builder
+new NodeSpy(String nodePath)              // alternate — path string form
+
+new NodeStub(SpyObjectReference nodeRef)
+new NodeStub(String nodePath)
+
+// ── NodeStub-only methods ─────────────────────────────────────────────────────
+TrainedBehaviour onCall()
+    // Returns a TrainedBehaviour to define what the stub does when called.
+    // Chain with: .propagatesMessage("in","out", assembly)
+    //             .propagatesInputMessage("in","out")   ← passes message straight through
+    //             .throwsException(...)
+boolean isTrainedForCall(String inputTerminalName)
+    // Returns true if the stub has trained behaviour for the named input terminal.
+
+// ── Driving the flow ──────────────────────────────────────────────────────────
+void propagate(TestMessageAssembly assembly, String terminalName)
+    // Drives the flow by propagating assembly from an OUTPUT terminal of this node.
+    // Used on input nodes (MQ Input, HTTP Input) to start a whole-flow test.
+    // terminalName = the output terminal of the input node (typically "out").
+
+void evaluate(TestMessageAssembly assembly, boolean singleNodeTest)
+    // Calls the "in" terminal of this node with the assembly.
+    // singleNodeTest=true  → prevents propagation from output terminals (unit test mode).
+    // singleNodeTest=false → allows propagation to continue downstream.
+
+void evaluate(TestMessageAssembly assembly, boolean singleNodeTest, String inputTerminalName)
+    // As above but targets a specific input terminal (not just "in").
+
+// ── Controlling propagation ───────────────────────────────────────────────────
+void setStopAtInputTerminal(String terminalName)
+    // Prevents a message from being delivered TO this node's named input terminal.
+    // Use on output/terminal nodes to stop real I/O (MQ writes, HTTP calls).
+
+void setStopAtOutputTerminal(String terminalName)
+    // Prevents propagation FROM this node's named output terminal.
+    // Use on a NodeStub after propagatesInputMessage to stop further downstream processing.
+
+void clearStopAtInputTerminal(String terminalName)
+    // Re-enables delivery to a previously stopped input terminal.
+
+void clearStopAtOutputTerminal(String terminalName)
+    // Re-enables propagation from a previously stopped output terminal.
+
+void clearStopAtTerminals()
+    // Re-enables propagation from ALL terminals.
+
+// ── Counts (cumulative within a test method — reset by TestSetup.restoreAllMocks()) ──
+int callCount()
+    // Number of times this node has been called.
+
+int propagateCount(String terminalName)
+    // Number of times the named OUTPUT terminal has propagated a message.
+
+int receiveCount(String terminalName)
+    // Number of times the named INPUT terminal has received a message.
+
+// ── Retrieving messages ───────────────────────────────────────────────────────
+TestMessageAssembly propagatedMessageAssembly(String terminalName, int messageNumber)
+    // Gets the Nth assembly propagated FROM the named output terminal (1-based).
+
+TestMessageAssembly receivedMessageAssembly(String terminalName, int messageNumber)
+    // Gets the Nth assembly received AT the named input terminal (1-based).
+
+String propagatedMessageAsString(String terminalName, int messageNumber)
+    // Gets the message body (as String) propagated from the named output terminal.
+
+String receivedMessageAsString(String terminalName, int messageNumber)
+    // Gets the message body (as String) received at the named input terminal.
+
+// ── Introspection ─────────────────────────────────────────────────────────────
+String   nodeName()
+    // Returns the name of the node being spied on.
+
+String[] inputTerminalNames()
+    // Returns the names of this node's input terminals.
+
+String[] outputTerminalNames()
+    // Returns the names of this node's output terminals.
+
+// ── Async / future-based ──────────────────────────────────────────────────────
+CompletableFuture<Void> whenPropagateCountIs(int count)
+    // Returns a future that completes once this node has propagated 'count' times.
+    // Use for asynchronous flow testing.
+
+CompletableFuture<Void> whenCompletedTimes(int times)
+    // Returns a future that completes once this node AND its downstream nodes
+    // have completed 'times' invocations.
+
+// ── Teardown ──────────────────────────────────────────────────────────────────
+void restore()
+    // Restores the node to its unmocked state. After calling this, the NodeSpy/NodeStub
+    // object can no longer be used for assertions.
+    // Prefer TestSetup.restoreAllMocks() in @AfterEach over calling this manually.
+      ]]></real_api>
+    </nodespy_api>
 
     <helper_method_load_assembly>
       <description>
@@ -211,6 +333,52 @@ SpyObjectReference nodeRef = new SpyObjectReference()
       ]]></code>
     </pattern>
 
+    <pattern name="individual_field_assertion">
+      <description>
+        assertThat(actual, equalsMessage(expected)) is the preferred assertion — it compares
+        the entire message tree in one call. Use individual field assertions ONLY when you need
+        to verify a specific field value rather than the whole tree (e.g. checking a status code
+        or a computed field while ignoring everything else).
+
+        Two different path syntaxes apply depending on HOW you are accessing the field:
+
+          equalsMessage / ignorePath  →  XPath slash notation  (/Message/JSON/Data/field)
+          messagePath()               →  Dot notation           (JSON.Data.field)
+
+        messagePath() resolves a relative path from the parser root. The root in the ACE
+        runtime is the Assembly itself — there is no element literally named "message".
+        Starting a messagePath() call with "/message/" causes a BIP2331E at runtime.
+
+        Common parser roots for dot notation:
+          JSON body:        JSON.Data.[element]
+          XML body:         XMLNSC.[RootElement].[element]
+          HTTP response:    HTTPResponseHeader.[HeaderName]
+          HTTP request in:  HTTPInputHeader.[HeaderName]
+          LocalEnvironment: LocalEnvironment.[subtree].[field]
+      </description>
+      <code><![CDATA[
+// Retrieve and assert individual fields using dot notation
+TestMessageAssembly actual = nodeSpy.propagatedMessageAssembly("out", 1);
+
+assertEquals("Success",
+    actual.messagePath("JSON.Data.ResponseHeader.Status.statusDesc").getValueAsString());
+assertEquals("200",
+    actual.messagePath("HTTPResponseHeader.X-Original-HTTP-Status-Code").getValueAsString());
+
+// ignorePath() inside equalsMessage() still uses XPath slash notation — this is correct:
+assertThat(actual, equalsMessage(expected)
+    .ignorePath("/Message/JSON/Data/ResponseHeader/Status/statusDesc", false)
+    .ignorePath("/Message/HTTPResponseHeader/Date", false));
+      ]]></code>
+      <when_to_use>
+        Prefer assertThat(equalsMessage()) for full tree comparison.
+        Use individual field assertions (messagePath + assertEquals) when:
+          - You only care about one or two specific output fields
+          - The rest of the tree is non-deterministic and ignorePath() would be too verbose
+          - You want a targeted smoke check alongside a broader equalsMessage assertion
+      </when_to_use>
+    </pattern>
+
     <pattern name="terminal_assert_only">
       <description>
         When you only want to check that a node propagated to the correct terminal
@@ -231,23 +399,16 @@ assertThat(nodeSpy, terminalPropagateCountIs("out", 1));
   </java_test_patterns>
 
   <!-- ========================================
-       PART B: NodeStub API (WHOLE-FLOW TESTS)
+       PART B: NodeStub WHOLE-FLOW TESTS
        ======================================== -->
 
   <nodestub_api>
-    <description>
-      NodeStub prevents a node from executing its normal logic and from propagating messages
-      to downstream nodes. It is used alongside NodeSpy for whole-flow integration tests to:
-      - Prevent real outbound calls (HTTP requests, MQ writes) during testing
-      - Isolate specific paths through the flow
-      - Mock external service responses
-
-      NodeSpy (used in node-level unit tests) observes a node and lets it run.
-      NodeStub prevents a node from running altogether, acting as a stop point.
-    </description>
-
-    <!-- imports: NodeStub, NodeSpy, SpyObjectReference, TestMessageAssembly, TestSetup, TestException
-         — same set as Part A; see required_imports above -->
+    <!-- Full NodeSpy/NodeStub API reference is in Part A <nodespy_api>.
+         NodeStub extends NodeSpy — all NodeSpy methods are available on NodeStub.
+         NodeStub adds: onCall() → TrainedBehaviour, isTrainedForCall(String).
+         Key conceptual difference:
+           NodeSpy  — node runs its full logic; use to observe what a node produces
+           NodeStub — node logic is skipped; use to prevent real I/O and mock responses -->
 
     <pattern name="whole_flow_with_stubs">
       <description>
@@ -311,39 +472,7 @@ public void wholeFlow_FlowOrder_Test() throws TestException {
       ]]></code>
     </pattern>
 
-    <!-- error path whole-flow test: see Part C variant error_path_catch_terminal below
-         (parameterized version handles this more fully) -->
-
-    <nodestub_vs_nodespy>
-      <description>Key differences between NodeStub and NodeSpy</description>
-      <table>
-        <row>
-          <aspect>Purpose</aspect>
-          <nodespy>Observe a node executing normally</nodespy>
-          <nodestub>Prevent a node from executing at all</nodestub>
-        </row>
-        <row>
-          <aspect>Node execution</aspect>
-          <nodespy>Node runs its full logic</nodespy>
-          <nodestub>Node logic is skipped</nodestub>
-        </row>
-        <row>
-          <aspect>Downstream propagation</aspect>
-          <nodespy>Node propagates normally</nodespy>
-          <nodestub>Propagation is stopped</nodestub>
-        </row>
-        <row>
-          <aspect>setReturnValue</aspect>
-          <nodespy>Not available</nodespy>
-          <nodestub>Can feed a mock response back into the flow</nodestub>
-        </row>
-        <row>
-          <aspect>Use case</aspect>
-          <nodespy>Unit test: test what THIS node produces</nodespy>
-          <nodestub>Integration test: mock external services, stop output nodes</nodestub>
-        </row>
-      </table>
-    </nodestub_vs_nodespy>
+    <!-- error path whole-flow test: see Part C variant error_path_catch_terminal -->
   </nodestub_api>
 
   <!-- ========================================
@@ -614,7 +743,10 @@ public void WholeFlow_ErrorPath_Test(String inputMXMLName, String expectedMXMLNa
     // ... test body
 }
 
-// For plain @Test methods:
+// For plain @Test methods (e.g. fan-out node where downstream nodes are already unit-tested):
+// NOTE: @Disabled on a fan-out test is a user decision — do NOT apply it automatically.
+// First add a comment block explaining the failure (see 5_ace_test_project_guide.xml
+// decision_table fan-out row), then present @Disabled as one option to the user.
 @Disabled("Sequential fan-out — NodeSpy.evaluate() cannot assert propagateCount=2")
 @Test
 public void SomeNode_Test() throws TestException {
@@ -672,24 +804,7 @@ bypassStub.onCall().propagatesInputMessage("in", "failure");
         <symptom>NullPointerException or "no message received" error</symptom>
         <solution>Always call inputSpy.propagate() FIRST, then retrieve outputs with receivedMessageAssembly()</solution>
       </mistake>
-      <mistake>
-        <problem>Calling a method on TestMessageAssembly that does not exist</problem>
-        <symptom>
-          Java compile error: "The method X is undefined for the type TestMessageAssembly"
-          Common offenders: setMockMessageContent(String, String), getMessageValue(String),
-          setMessageBody(String), getField(String) — NONE of these methods exist.
-        </symptom>
-        <solution>
-          Only two operations are valid on TestMessageAssembly:
-            1. assembly.buildFromRecordedMessageAssembly(InputStream) — populate from a .mxml file
-            2. assertThat(actual, equalsMessage(expected))            — compare via Hamcrest matcher
-          To retrieve outputs use nodeSpy.propagatedMessageAssembly("terminal", n) or
-          nodeSpy.receivedMessageAssembly("terminal", n).
-          There is NO API to construct a TestMessageAssembly from a raw String payload.
-          If you need specific input for a unit test, use the recorded .mxml checkpoint
-          for that node's input terminal — do not try to build message content from scratch.
-        </solution>
-      </mistake>
+      <!-- For invalid TestMessageAssembly method calls, see Part A <testmessageassembly_api> critical rule -->
     </common_mistakes>
 
     <!-- complete_example: combine the required_imports block, core_pattern template,
@@ -700,7 +815,260 @@ bypassStub.onCall().propagatesInputMessage("in", "failure");
   </parameterized_test_patterns>
 
   <!-- ========================================
-       PART D: GENERATED vs MANUAL TESTS
+       PART D: ROUTING TESTS (BLOB INPUT + STUB COUNTING)
+       ======================================== -->
+
+  <routing_test_patterns>
+    <overview>
+      Routing tests verify that a flow sends a message to the correct downstream nodes
+      WITHOUT inspecting message content. They are the right choice when:
+        - The flow contains conditional branching (Route, Filter, Flow Order)
+        - You want to confirm which output nodes are reached for each input scenario
+        - Message content transformation is tested separately in unit tests
+
+      Key differences from whole-flow content tests (Part B/C):
+        - Input is built from a raw file or byte array using buildBLOBMessage() —
+          no recorded .mxml file required
+        - Assertions use terminalReceiveCountIs on NodeStubs — not equalsMessage
+        - NodeStubs use propagatesInputMessage("in","out") to let the flow continue
+          past the stub so that downstream routing can still be evaluated
+        - LocalEnvironment and Environment seed values are injected via
+          localEnvironmentPath() and environmentPath() before propagation
+
+      Additional imports for routing tests:
+        import static com.ibm.integration.test.v1.Matchers.terminalReceiveCountIs;
+        import org.junit.jupiter.params.ParameterizedTest;
+        import org.junit.jupiter.params.provider.CsvSource;
+      API methods used: buildBLOBMessage(), localEnvironmentPath(), environmentPath()
+      — all documented in Part A &lt;testmessageassembly_api&gt; and &lt;nodespy_api&gt;.
+    </overview>
+
+    <pattern name="routing_test_csv">
+      <description>
+        Routing test using @CsvSource: each row is one input scenario with the
+        expected hit-count for each downstream branch node. The counts are passed
+        as int parameters and asserted with terminalReceiveCountIs on each NodeStub.
+
+        Use this pattern when:
+          - All test files are known up front and can be listed inline in @CsvSource
+          - The number of branch nodes and their expected counts vary per scenario
+          - You want a single test class to cover all routing scenarios for a flow
+      </description>
+      <code><![CDATA[
+@ParameterizedTest
+//           File name                   BranchA?  BranchB?  BranchC?
+@CsvSource({"[filename1].json,              1,        0,        0",
+            "[filename2].json,              0,        1,        0",
+            "[filename3].json,              0,        0,        0"})
+void [FlowName]_RoutingTest(String fileName, int branchA, int branchB, int branchC)
+        throws TestException {
+
+    // Spy on the input node to inject the message
+    SpyObjectReference inputRef = new SpyObjectReference()
+            .application("[AppName]").messageFlow("[FlowName]").node("[InputNodeLabel]");
+    NodeSpy inputSpy = new NodeSpy(inputRef);
+
+    // Stub external-call nodes to prevent real I/O — propagatesInputMessage lets
+    // the flow continue past the stub so downstream routing can still be evaluated
+    SpyObjectReference externalRef = new SpyObjectReference()
+            .application("[AppName]").messageFlow("[FlowName]").node("[ExternalNodeLabel]");
+    NodeStub externalStub = new NodeStub(externalRef);
+    externalStub.onCall().propagatesInputMessage("in", "out");
+
+    // Stub the branch nodes being asserted — propagate through so counts accumulate
+    SpyObjectReference branchARef = new SpyObjectReference()
+            .application("[AppName]").messageFlow("[FlowName]").node("[BranchANodeLabel]");
+    NodeStub branchAStub = new NodeStub(branchARef);
+    branchAStub.onCall().propagatesInputMessage("in", "out");
+
+    SpyObjectReference branchBRef = new SpyObjectReference()
+            .application("[AppName]").messageFlow("[FlowName]").node("[BranchBNodeLabel]");
+    NodeStub branchBStub = new NodeStub(branchBRef);
+    branchBStub.onCall().propagatesInputMessage("in", "out");
+
+    SpyObjectReference branchCRef = new SpyObjectReference()
+            .application("[AppName]").messageFlow("[FlowName]").node("[BranchCNodeLabel]");
+    NodeStub branchCStub = new NodeStub(branchCRef);
+    branchCStub.onCall().propagatesInputMessage("in", "out");
+
+    // Build input from a raw file — no .mxml recording required
+    TestMessageAssembly input = new TestMessageAssembly();
+    input.buildBLOBMessage(Thread.currentThread().getContextClassLoader()
+            .getResourceAsStream("/[ResourceSubDir]/" + fileName));
+
+    // Seed any LocalEnvironment values the flow reads during execution
+    input.localEnvironmentPath("[testControlAttribute]").setValue([defaultValue]);
+
+    // Drive the flow
+    inputSpy.propagate(input, "out");
+
+    // Assert each branch was (or was not) reached the expected number of times
+    assertThat(branchAStub, terminalReceiveCountIs("in", branchA));
+    assertThat(branchBStub, terminalReceiveCountIs("in", branchB));
+    assertThat(branchCStub, terminalReceiveCountIs("in", branchC));
+}
+      ]]></code>
+    </pattern>
+
+    <pattern name="routing_test_method_source">
+      <description>
+        Routing test using @MethodSource: test files are discovered at runtime by
+        scanning a directory under the deployed test project's resources folder.
+        Use this pattern when:
+          - Test files are organised in subdirectories by expected outcome
+          - New test files should be picked up automatically without code changes
+          - All files in a given directory are expected to produce the same routing outcome
+
+        The scanner uses broker.workdir and broker.testProject system properties
+        (set by the ACE test runner) to locate the resources directory on disk.
+      </description>
+      <code><![CDATA[
+import java.io.IOException;
+import java.nio.file.*;
+import java.util.*;
+import java.util.stream.Stream;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+
+class [FlowName]_Routing_[NNNN] {
+
+    /**
+     * Scans a named subdirectory under the deployed test project resources folder
+     * and returns one Arguments entry per .json file found.
+     * Called by @MethodSource on each path-specific test method.
+     */
+    public static List<Arguments> scanResourcesForTestFiles(String directoryName) throws Exception {
+        List<Arguments> results = new ArrayList<>();
+        String serverWorkDir = System.getProperty("broker.workdir");
+        String testProject   = System.getProperty("broker.testProject");
+        Path dir = Paths.get(serverWorkDir, "run", testProject, "resources", directoryName);
+
+        try (Stream<Path> stream = Files.walk(dir)) {
+            stream.filter(Files::isRegularFile)
+                  .forEach(path -> {
+                      if (path.getFileName().toString().endsWith(".json")) {
+                          results.add(Arguments.of(directoryName + "/" + path.getFileName()));
+                      }
+                  });
+        } catch (IOException e) { throw e; }
+
+        if (results.isEmpty()) {
+            throw new Exception("No JSON files found in " + dir);
+        }
+        return results;
+    }
+
+    // One @MethodSource method + @ParameterizedTest per expected routing outcome:
+    public static List<Arguments> scanFor[BranchA]Files() throws Exception {
+        return scanResourcesForTestFiles("[BranchATestFiles]");
+    }
+    @ParameterizedTest
+    @MethodSource("scanFor[BranchA]Files")
+    void [BranchA]RoutingTest(String fileName) throws TestException {
+        commonRoutingTest(fileName, 1 /* branchA */, 0 /* branchB */);
+    }
+
+    public static List<Arguments> scanFor[BranchB]Files() throws Exception {
+        return scanResourcesForTestFiles("[BranchBTestFiles]");
+    }
+    @ParameterizedTest
+    @MethodSource("scanFor[BranchB]Files")
+    void [BranchB]RoutingTest(String fileName) throws TestException {
+        commonRoutingTest(fileName, 0 /* branchA */, 1 /* branchB */);
+    }
+
+    /** Shared test logic — wires stubs and drives the flow */
+    void commonRoutingTest(String fileName, int branchA, int branchB) throws TestException {
+        SpyObjectReference inputRef = new SpyObjectReference()
+                .application("[AppName]").messageFlow("[FlowName]").node("[InputNodeLabel]");
+        NodeSpy inputSpy = new NodeSpy(inputRef);
+
+        SpyObjectReference branchARef = new SpyObjectReference()
+                .application("[AppName]").messageFlow("[FlowName]").node("[BranchANodeLabel]");
+        NodeStub branchAStub = new NodeStub(branchARef);
+        branchAStub.onCall().propagatesInputMessage("in", "out");
+
+        SpyObjectReference branchBRef = new SpyObjectReference()
+                .application("[AppName]").messageFlow("[FlowName]").node("[BranchBNodeLabel]");
+        NodeStub branchBStub = new NodeStub(branchBRef);
+        branchBStub.onCall().propagatesInputMessage("in", "out");
+
+        TestMessageAssembly input = new TestMessageAssembly();
+        input.buildBLOBMessage(Thread.currentThread().getContextClassLoader()
+                .getResourceAsStream("/" + fileName));
+        input.localEnvironmentPath("[testControlAttribute]").setValue([defaultValue]);
+
+        inputSpy.propagate(input, "out");
+
+        assertThat(branchAStub, terminalReceiveCountIs("in", branchA));
+        assertThat(branchBStub, terminalReceiveCountIs("in", branchB));
+    }
+}
+      ]]></code>
+    </pattern>
+
+    <pattern name="expected_failure_test">
+      <description>
+        Tests that verify a flow FAILS in a specific, expected way — e.g. an invalid
+        message causes a TestException with a known BIP message number.
+        Use assertThrows to capture the exception and assertEquals to verify the BIP code.
+
+        Also shows: running multiple propagations in one test and asserting cumulative
+        stub/spy counts across both propagations.
+      </description>
+      <code><![CDATA[
+import static org.junit.jupiter.api.Assertions.*;
+
+@Test
+void [ScenarioDescription]_ThrowsExpectedError() throws TestException {
+
+    SpyObjectReference inputRef = new SpyObjectReference()
+            .application("[AppName]").messageFlow("[FlowName]").node("[InputNodeLabel]");
+    NodeSpy inputSpy = new NodeSpy(inputRef);
+
+    SpyObjectReference observedRef = new SpyObjectReference()
+            .application("[AppName]").messageFlow("[FlowName]").node("[ObservedNodeLabel]");
+    NodeSpy observedSpy = new NodeSpy(observedRef);
+
+    TestMessageAssembly input = new TestMessageAssembly();
+    input.buildBLOBMessage(Thread.currentThread().getContextClassLoader()
+            .getResourceAsStream("/[ResourceSubDir]/[filename].[ext]"));
+
+    // Seed Environment/LocalEnvironment flags that trigger the failure condition
+    input.environmentPath("Variables.[flagName]").setValue("[triggerValue]");
+    input.localEnvironmentPath("[testControlAttribute]").setValue("[value]");
+
+    // Assert the flow throws — capture the exception to inspect the BIP number
+    TestException ex = assertThrows(TestException.class,
+            () -> inputSpy.propagate(input, "out"));
+    assertEquals([expectedBIPNumber], ex.getMessageNumber());
+
+    // Assert node counts reflect the partial execution before the failure
+    assertThat(observedSpy, terminalPropagateCountIs("out", 0));
+
+    // --- Second propagation in the same test (different control value) ---
+    // Spy counts are CUMULATIVE within a test — factor previous counts in
+    input.localEnvironmentPath("[testControlAttribute]").setValue("[differentValue]");
+    TestException ex2 = assertThrows(TestException.class,
+            () -> inputSpy.propagate(input, "out"));
+    assertEquals([expectedBIPNumber], ex2.getMessageNumber());
+
+    // Count includes BOTH propagations
+    assertThat(observedSpy, terminalPropagateCountIs("[OutputTerminal]", [cumulativeCount]));
+}
+      ]]></code>
+      <cumulative_count_note>
+        NodeSpy and NodeStub counts are NOT reset between multiple propagate() calls
+        within the same test method. When asserting after a second propagation, the
+        expected count must include hits from all previous propagations in that test.
+        TestSetup.restoreAllMocks() in @AfterEach resets counts between test methods.
+      </cumulative_count_note>
+    </pattern>
+
+  </routing_test_patterns>
+
+  <!-- ========================================
+       PART E: GENERATED vs MANUAL TESTS
        ======================================== -->
 
   <generated_vs_manual_tests>
