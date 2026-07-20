@@ -11,7 +11,7 @@ While traditional tools rely on a rigid micro-assertion model that logs state ca
 - **Intelligent Assertions & Masking:** Detects volatile elements like timestamps and HTTP headers via pattern matching, chaining them with `.ignorePath()` suppressions to eliminate false failures.
 - **Empirical Documentation:** Outputs an automated README featuring a generated Mermaid flow diagram mapping subflow topology, alongside path coverage analysis tables.
 
-To scale across enterprise estates without exhausting active LLM context windows, core behavioural guardrails remain locked in structured rule files while heavy programmatic generation tasks offload to decoupled **Model Context Protocol (MCP)** workers. This architecture supports four key roadmap enhancements:
+As we look to the future, leveraging Model Context Protocol (MCP) workers to offload heavy generation tasks unlocks enterprise-scale AI automation without LLM context constraints. This architectural foundation sets the trajectory for next-generation integration engineering, expanding the subagent’s capabilities across four core roadmap directions:
 
 - **Deep Intra-Node Coverage Scoring:** Computes exact component, terminal, and logic path coverage percentages within ESQL blocks, Java Compute nodes, Graphical Data Maps, and nested subflows.
 - **Multi-Flow Dependency Scaffolding (Contract Testing):** Automatically generates standalone scaffolding test applications for shared libraries and subflows to validate cross-application contract constraints in isolation, preventing cascading failures.
