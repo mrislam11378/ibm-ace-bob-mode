@@ -1,168 +1,248 @@
-# ACE Developer Mode — Test Generation Rules
+# ACE Developer Mode
 
-Rules powering the **ACE Developer** Bob mode for IBM App Connect Enterprise v13.
+## Overview
 
----
+The **ACE Developer** mode is a custom mode for IBM Bob that enables enterprise-grade development of IBM App Connect Enterprise (ACE) v13 integration solutions. This mode combines IBM's ace-bob skill with enterprise-specific best practices, patterns, and guidelines to ensure all generated ACE artifacts align with organizational standards.
 
-## Why Testing ACE Flows Is Important — and Why It Rarely Happens
+## Purpose
 
-Every ACE application should have a test project. In practice, almost none do.
-Three reasons compound to make this the norm rather than the exception.
+This custom mode demonstrates how enterprises can:
 
-**1. The IIB legacy.**
-IBM Integration Bus had no test framework. Testing meant deploying to an environment
-and sending real messages — automated testing simply wasn't viable. ACE v13 changed
-that, but the culture and habits formed over years of IIB never caught up. Most teams
-are still working the same way: deploy and hope.
+1. **Leverage IBM's ace-bob Skill** - Use the authoritative ACE artifact generation capabilities provided by IBM
+2. **Integrate Enterprise Best Practices** - Layer organizational standards, patterns, and guidelines on top of IBM's foundation
+3. **Ensure Consistency** - Generate ACE integrations that consistently follow enterprise architecture and coding standards
+4. **Accelerate Development** - Provide developers with proven patterns for common integration scenarios
+5. **Maintain Quality** - Enforce error handling, audit logging, and operational excellence patterns
 
-**2. We are almost always migrating legacy code.**
-The most common engagement is migration — IIB → ACE, on-premises → OpenShift/cloud.
-Without automated tests, validating that a migration hasn't broken anything is slow,
-manual, and low-confidence. Recorded-message tests solve this directly: they capture
-real production behaviour and run in seconds, turning a nerve-wracking go-live into a
-verifiable one.
+## ace-bob Skill
 
-**3. Writing tests takes time and skills that aren't free.**
-Even with ACE v13 tooling, a complete test suite requires Java/JUnit knowledge, fluency
-with the Integration Test Library API, and hard-won experience with failure patterns
-like BIP2331E, fan-out propagation counts, and SSL config. Getting there takes days —
-days that most engagement teams would rather spend delivering business value.
+This mode uses the **ace-bob** skill published at:
+**https://github.com/ot4i/ace-bob**
 
-This is the gap the ACE Developer Bob mode is designed to close.
+The ace-bob skill provides:
+- Authoritative definitions for ACE Toolkit project structures
+- Correct xmi:type namespace prefixes for all ACE node types
+- Eclipse project requirements and configurations
+- Best practices for ESQL, Java, and message flow development
+- Guidance for specific connectors (Salesforce, ServiceNow, AWS, Azure, etc.)
 
----
+### Why ace-bob is Critical
 
-## The Problem with the Alternatives
+The ace-bob skill ensures that all generated ACE artifacts:
+- Are compatible with ACE Toolkit v13
+- Use correct XML namespaces and node types
+- Follow IBM's recommended project structures
+- Can be imported and edited in ACE Toolkit without errors
 
-### `ibmint generate tests` alone
+**Important:** This mode ALWAYS uses the ace-bob skill for creating .msgflow, .esql, .java, .map, and .subflow files to ensure technical correctness.
 
-Produces a raw baseline, not a finished test suite:
+## Enterprise Customization
 
-- Missing `.project`, `.classpath`, `.settings/` — cannot import into the Toolkit without creating them manually.
-- Time-varying fields (`createdDate`, HTTP `Date`, CDN headers) cause immediate failures — tests never pass on first run.
-- No README, no coverage analysis, no guidance on untestable nodes.
-- Fan-out nodes generate tests that fail with `propagateCount=0` — silent and confusing without context.
-- **Node-level tests only** — `ibmint` tests each node in isolation. They do not test message flow-level behaviour: fan-out, fan-in, aggregation, routing decisions, and sequential propagation patterns are invisible at the node level. A flow can pass all node-level tests and still behave incorrectly end-to-end.
+While ace-bob provides the technical foundation, this custom mode adds enterprise-specific layers:
 
-**Cost: 1–3 hours** to make it compile and understand why tests fail before writing anything new.
+### 1. Enterprise Patterns (6_enterprise_patterns.xml)
+Derived from real-world production implementations, including:
+- **Audit Logging Pattern** - Standardized message tracking across all flows
+- **Error Handling Pattern** - Centralized error capture with email notifications
+- **File Processing Pattern** - Dynamic naming, archival, and error handling
+- **Database Integration Pattern** - Connection pooling, transaction management
+- **Deployment Pattern** - BAR file creation and environment promotion
 
-### Writing WholeFlow tests manually
+### 2. ESQL Best Practices (2_esql_best_practices.xml)
+Enterprise coding standards including:
+- Performance optimization techniques (REFERENCE usage, tree copying minimization)
+- Memory management guidelines
+- Loop optimization patterns
+- String manipulation efficiency
+- Field existence checking methods
+- Common utility procedures
+- Documentation standards
 
-- Requires knowing which of 6+ patterns to apply (routing, content, error path, directory scan, expected failure, stub bypass) — none consistently documented in one place.
-- Common mistakes (BIP2331E path notation, missing `setStopAtInputTerminal` causing real MQ writes, `@ParameterizedTest` vs `@Test`) only surface at runtime.
+### 3. Message Flow Patterns (4_message_flow_patterns.xml)
+Proven flow designs for:
+- Request-reply HTTP services
+- MQ-to-MQ transformations
+- File-based integration
+- Database polling
+- Aggregation and scatter-gather patterns
+- Subflow reusability patterns
 
-**Cost: half a day to a full day** per flow for an experienced ACE developer.
+### 4. Project Structure Standards (3_project_structure_patterns.xml)
+Organizational conventions for:
+- Project naming and organization
+- Directory structures
+- Properties file management
+- Dependency management
+- Version control practices
+- BAR file organization
 
----
+### 5. Development Workflow (1_workflow.xml)
+Step-by-step guidance through:
+- Requirements analysis
+- Project creation
+- Message flow design
+- ESQL development
+- Audit implementation
+- Testing and validation
+- Deployment preparation
 
-## What Bob Adds
+### 6. ace-bob Integration Guide (5_ace_bob_skill_integration.xml)
+Detailed instructions on:
+- When and how to use the ace-bob skill
+- Node type lookup process
+- Application Connector configuration
+- Troubleshooting common issues
+- Integration with enterprise patterns
 
-The ACE Developer mode wraps the full test lifecycle — from recording through running
-tests — in a single guided workflow. The rules encode hard-won knowledge that would
-otherwise require reading multiple IBM documentation pages, making mistakes, and
-iterating.
+## How It Works
 
-### 1. Immediate, runnable output
+When you use the ACE Developer mode:
 
-Bob generates the complete project — not just the Java class. It creates `.project`,
-`.classpath`, `.settings/`, `testproject.descriptor`, `build.gradle`, `settings.gradle`,
-and `README.md` in a single pass. The output imports into the ACE Toolkit with zero
-manual steps and compiles without errors.
+1. **IBM Bob analyzes your request** - Understands what ACE artifacts you need
+2. **Consults enterprise patterns** - Checks for similar implementations and best practices
+3. **Leverages ace-bob skill** - Uses IBM's skill to generate technically correct artifacts
+4. **Applies enterprise standards** - Ensures error handling, audit logging, and naming conventions
+5. **Validates completeness** - Confirms all required files and configurations are in place
 
-**Time saved: 30 min** per project.
+## Example Use Cases
 
-### 2. Tests that actually pass on first run
+### Creating a New Integration Flow
+```
+User: "Create an ACE flow that reads from an MQ queue, transforms the message, 
+       and calls a REST API"
 
-Bob automatically identifies time-varying fields from the recorded messages and adds
-`ignorePath()` calls for common offenders (`createdDate`, `modifiedDate`, HTTP `Date`,
-CDN headers, `WrittenDestination`). Generated tests that would fail immediately due to
-timestamp drift are fixed before they are ever run.
+ACE Developer Mode:
+1. Creates ACE Application project with correct structure
+2. Generates message flow with MQ Input, Compute, HTTP Request nodes
+3. Creates ESQL with audit initialization and error handling
+4. Adds error handling subflow with email notification
+5. Creates properties files for all environments
+6. Includes comprehensive documentation
+```
 
-**Time saved: 1 - 2 Hours** of debugging per flow.
+### Implementing Error Handling
+```
+User: "Add enterprise-standard error handling to my flow"
 
-### 3. Coverage analysis built in
+ACE Developer Mode:
+1. References enterprise error handling pattern
+2. Adds Catch terminal connection
+3. Invokes error handling subflow
+4. Configures email notification
+5. Updates audit parameters
+6. Follows established patterns from production flows
+```
 
-Bob reads the `.msgflow` files alongside the `ibmint generate msgindex` output and
-produces a coverage report as part of the README:
+### Creating Reusable Components
+```
+User: "Create a subflow for database audit logging"
 
-- Every node in the flow is listed and matched against recorded checkpoints.
-- Nodes with no recorded output are flagged with the reason (error terminal never
-  triggered, node on unrecorded path, input/terminal node not directly testable).
-- Missing scenarios (failure paths, alternate branches) are called out explicitly with
-  instructions for capturing them.
+ACE Developer Mode:
+1. Creates Library project if needed
+2. Generates subflow with standard audit fields
+3. Implements database insert with error handling
+4. Adds to shared library for reuse
+5. Documents usage and dependencies
+```
 
-This is coverage analysis that `ibmint` does not provide at all and that a developer
-would otherwise have to derive manually by cross-referencing the `.msgflow` XML against
-the msgindex output — a task that takes **30–60 minutes** per flow and is easy to get wrong.
+## Benefits
 
-**Time saved: 30–60 minutes** per application.
+### For Developers
+- **Faster Development** - Proven patterns and templates accelerate coding
+- **Consistency** - All code follows the same standards
+- **Learning** - Built-in best practices teach proper ACE development
+- **Quality** - Automated inclusion of error handling and audit logging
 
-### 4. Correct pattern selection, automatically
+### For Architects
+- **Standards Enforcement** - Ensures architectural guidelines are followed
+- **Pattern Reuse** - Promotes consistent solutions across teams
+- **Maintainability** - Standardized code is easier to maintain
+- **Knowledge Capture** - Preserves organizational expertise
 
-Bob knows which test pattern to apply for each node type:
+### For Operations
+- **Reliability** - Comprehensive error handling and monitoring
+- **Troubleshooting** - Standardized audit logging aids diagnosis
+- **Deployment** - Consistent BAR file structure and properties management
+- **Support** - Email notifications alert teams to issues
 
-| Node type | Pattern Bob selects |
-|---|---|
-| Compute / Mapping | Node-level unit test, `equalsMessage` |
-| HTTP Request (outbound) | `equalsMessage` + `ignorePath` for live fields, or `setStopAtInputTerminal` for offline |
-| Fan-out (Flow Order) | Comment block explaining the propagation count issue + Mermaid diagram in README |
-| Routing flow | `@CsvSource` routing test with `terminalReceiveCountIs` on NodeStubs |
-| Error path | `error_path_catch_terminal` variant with catch terminal assertion |
-| Expected flow failure | `assertThrows(TestException.class)` + `ex.getMessageNumber()` |
+## File Structure
 
-Without Bob, selecting the right pattern requires reading multiple documentation pages
-and understanding the difference between `NodeSpy.evaluate()` and `NodeSpy.propagate()`,
-`terminalReceiveCountIs` vs `terminalPropagateCountIs`, and when to use `NodeStub` vs
-`setStopAtInputTerminal`. These distinctions are not documented in a single place anywhere
-in IBM's official documentation.
+```
+README.md                                # This file
+.bob/
+├── custom_modes.yaml                    # Custom mode configuration
+├── rules-ace-developer/
+│   ├── 1_development_workflow_and_patterns.xml
+│   │                                     # Development workflow and implementation patterns
+│   ├── 2_esql_and_coding_standards.xml
+│   │                                     # ESQL best practices and coding standards
+│   ├── 3_project_structure_and_enterprise_patterns.xml
+│   │                                     # Project structure and enterprise conventions
+│   ├── 4_implementation_reference.xml
+│   │                                     # Implementation reference guidance
+│   └── 10_http_query_parameter_handling.xml
+│                                         # HTTP query parameter handling guidance
+└── skills/                               # Skill directory
+```
 
-### 5. Path notation errors eliminated
+## Getting Started
 
-BIP2331E (`Field '/message/JSON/Data/...' does not exist`) is one of the most common
-and confusing test failures. It is caused by using XPath slash notation with `messagePath()`
-instead of dot notation. Bob knows the rule: `messagePath()` uses dot notation;
-`ignorePath()` inside `equalsMessage()` uses XPath slash notation. This distinction
-is not documented in IBM's Knowledge Center.
+### Prerequisites
 
-**Time saved: 20–60 minutes** of debugging.
+1. **Download the ace-bob mode** - Clone or download this repository to your local machine
+2. **Install the ace-bob skill** - The ace-bob skill must be checked out from GitHub:
+   ```bash
+   cd .bob/skills/
+   git clone https://github.com/ot4i/ace-bob.git
+   ```
+   This ensures you have the latest version of IBM's ace-bob skill with all ACE artifact generation capabilities.
 
-### 6. Living README with Mermaid diagrams
+### Using the Mode
 
-Every test project gets a README that documents the flow structure (Mermaid diagram
-from the actual `.msgflow`), recorded sessions, coverage gaps, known limitations, and
-re-generation instructions. Fan-out propagation failures are explained visually in the
-README rather than as cryptic inline comments.
+1. **Switch to ACE Developer mode** when working on ACE projects
+2. **Describe your integration requirement** - Bob will guide you through the process
+3. **Review generated artifacts** - All files follow enterprise standards
+4. **Import into ACE Toolkit** - Use File > Import > Existing Projects into Workspace
 
----
+## Example Commands
 
-## Time Savings Summary
+```
+"Create a new ACE application for processing customer orders from MQ"
 
-| Task | Without Bob | With Bob |
-|---|---|---|
-| Scaffold test project (post `ibmint`) | 1–2 hours | ~30 minutes |
-| Fix timestamp/ignorePath failures | 1–2 hours | Automatic |
-| Coverage gap analysis | 30–60 min per flow | ~2 minutes |
-| Select correct test pattern | 30–60 min research | Immediate |
-| Write routing test class | 1–2 hours | ~10 minutes |
-| Debug path notation | 20–60 min | Prevented |
-| Write README + diagrams | 30–60 min | ~5 minutes |
-| **Total per flow** | **4–8 hours** | **~30 minutes** |
+"Add error handling with email notification to my flow"
 
-For a project with 5 applications, this is the difference between a week of test work and
-a single afternoon.
+"Create a subflow for audit logging"
 
----
+"Generate ESQL to transform XML to JSON"
 
-## Future Direction
+"Create properties files for all environments"
 
-- **Coverage scoring** — numeric score (nodes covered / testable nodes) as a CI gate, not just a README entry.
-- **Test quality analysis** — flag tests using `equalsMessage` without `ignorePath` on volatile fields, `@Disabled` without a linked issue, or flows with no error-path coverage.
-- **CI/CD pipeline generation** — Bob already knows `ibmint deploy` and `IntegrationServer --test-project`; extend to generate a full pipeline script (GitHub Actions / Azure DevOps / Jenkins).
-- **Multi-flow dependency awareness** — map Callable flow dependencies and generate cross-flow integration tests with NodeStub isolation.
-- **Mutation testing guidance** — once a baseline exists, identify high-risk ESQL nodes and suggest mutations to verify the tests would catch a regression. Particularly valuable for IIB → ACE migrations.
+"Build a file processing flow with dynamic naming"
+```
 
----
+## Customization
 
-*Rules maintained in `.bob/rules-ace-developer/`. To contribute improvements, follow
-the pattern established in the existing rule files: templated examples, no customer
-data, cross-references between files using the section/file name convention.*
+Enterprises can customize this mode by:
+
+1. **Updating enterprise patterns** - Add your organization's specific patterns
+2. **Modifying naming conventions** - Adjust to match your standards
+3. **Adding custom utilities** - Include organization-specific procedures
+4. **Configuring properties** - Set default values for your environments
+5. **Extending workflows** - Add organization-specific steps
+
+## Technical Requirements
+
+- IBM App Connect Enterprise v13 (ACE Toolkit)
+- IBM Bob with ace-bob skill installed
+- Access to example ACE projects (for pattern learning)
+- Understanding of enterprise integration patterns
+
+## Support and Maintenance
+
+This mode is designed to evolve with your organization:
+
+- **Add new patterns** as they emerge from production implementations
+- **Update best practices** based on lessons learned
+- **Refine workflows** to match changing processes
+- **Extend coverage** to new integration scenarios
+
